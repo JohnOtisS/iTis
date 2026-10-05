@@ -1,0 +1,31 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../vendor/shadcn-tailwind-4.13.0.css";
+
+:root {
+  --background:#070b0d; --foreground:#eef4f2; --card:#0d1315; --card-foreground:#eef4f2;
+  --popover:#11191b; --popover-foreground:#eef4f2; --primary:#b8ff6b; --primary-foreground:#091005;
+  --secondary:#151d1f; --secondary-foreground:#dce7e3; --muted:#11181a; --muted-foreground:#83918d;
+  --accent:#16231f; --accent-foreground:#dfffc1; --destructive:#ff6475; --border:#213032;
+  --input:#263537; --ring:#b8ff6b; --chart-1:#b8ff6b; --chart-2:#63e6d4; --chart-3:#7aa2ff;
+  --chart-4:#ffcb66; --chart-5:#ff7fb5; --radius:.9rem; --sidebar:#090e10; --sidebar-foreground:#dce7e3;
+  --sidebar-primary:#b8ff6b; --sidebar-primary-foreground:#091005; --sidebar-accent:#14201d;
+  --sidebar-accent-foreground:#efffe5; --sidebar-border:#1d2a2c; --sidebar-ring:#b8ff6b;
+}
+@theme inline {
+  --color-background:var(--background); --color-foreground:var(--foreground); --color-card:var(--card); --color-card-foreground:var(--card-foreground);
+  --color-popover:var(--popover); --color-popover-foreground:var(--popover-foreground); --color-primary:var(--primary); --color-primary-foreground:var(--primary-foreground);
+  --color-secondary:var(--secondary); --color-secondary-foreground:var(--secondary-foreground); --color-muted:var(--muted); --color-muted-foreground:var(--muted-foreground);
+  --color-accent:var(--accent); --color-accent-foreground:var(--accent-foreground); --color-destructive:var(--destructive); --color-border:var(--border); --color-input:var(--input); --color-ring:var(--ring);
+  --color-chart-1:var(--chart-1); --color-chart-2:var(--chart-2); --color-chart-3:var(--chart-3); --color-chart-4:var(--chart-4); --color-chart-5:var(--chart-5);
+  --color-sidebar:var(--sidebar); --color-sidebar-foreground:var(--sidebar-foreground); --color-sidebar-primary:var(--sidebar-primary); --color-sidebar-primary-foreground:var(--sidebar-primary-foreground);
+  --color-sidebar-accent:var(--sidebar-accent); --color-sidebar-accent-foreground:var(--sidebar-accent-foreground); --color-sidebar-border:var(--sidebar-border); --color-sidebar-ring:var(--sidebar-ring);
+  --radius-sm:calc(var(--radius) - 4px); --radius-md:calc(var(--radius) - 2px); --radius-lg:var(--radius); --radius-xl:calc(var(--radius) + 4px);
+  --font-sans:"Segoe UI",Inter,ui-sans-serif,system-ui,sans-serif; --font-mono:"Cascadia Code","SFMono-Regular",Consolas,monospace;
+}
+*{border-color:var(--border)} html,body{height:100%} body{background:var(--background);color:var(--foreground);font-family:var(--font-sans)}
+button,a,input,textarea{transition:color .18s ease,background-color .18s ease,border-color .18s ease,opacity .18s ease,transform .18s ease} button:active{transform:translateY(1px)} ::selection{background:#b8ff6b;color:#091005}
+.itis-grid{background-image:linear-gradient(#b8ff6b08 1px,transparent 1px),linear-gradient(90deg,#b8ff6b08 1px,transparent 1px);background-size:32px 32px}
+.glass{background:linear-gradient(180deg,rgba(18,27,29,.88),rgba(11,17,19,.9));backdrop-filter:blur(18px)} .soft-ring{box-shadow:0 0 0 1px rgba(184,255,107,.05),0 22px 70px rgba(0,0,0,.25)}
+.metric-number{font-variant-numeric:tabular-nums;letter-spacing:-.035em}.no-scrollbar::-webkit-scrollbar{display:none}.no-scrollbar{scrollbar-width:none}
+@keyframes pulse-dot{0%,100%{opacity:.45;transform:scale(.9)}50%{opacity:1;transform:scale(1.08)}}.pulse-dot{animation:pulse-dot 1.8s ease-in-out infinite}
