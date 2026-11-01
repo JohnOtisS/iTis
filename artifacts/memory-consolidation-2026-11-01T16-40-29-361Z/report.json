@@ -1,0 +1,257 @@
+{
+  "cases": [
+    {
+      "name": "01-save-filtered-facts",
+      "seconds": 4.26,
+      "status": 200,
+      "text": "Đã cập nhật bộ nhớ: Người dùng muốn được gọi là Ngọc.; Người dùng thích câu trả lời ngắn gọn.; Riêng báo cáo kế toán, người dùng muốn trình bày đầy đủ số liệu và có bảng.",
+      "model": "iTis Memory",
+      "provider": "openai",
+      "conversationId": "10f51467-dbdf-4b30-b78b-fc4b382c9064",
+      "attachments": [],
+      "memory": {
+        "status": "saved",
+        "notice": "Đã cập nhật bộ nhớ: Người dùng muốn được gọi là Ngọc.; Người dùng thích câu trả lời ngắn gọn.; Riêng báo cáo kế toán, người dùng muốn trình bày đầy đủ số liệu và có bảng.",
+        "changed": 3,
+        "questions": [],
+        "usage": {
+          "input_tokens": 419,
+          "output_tokens": 150,
+          "total_tokens": 569
+        }
+      },
+      "usage": {
+        "input_tokens": 419,
+        "output_tokens": 150,
+        "total_tokens": 569
+      }
+    },
+    {
+      "name": "02-semantic-dedup",
+      "seconds": 2.074,
+      "status": 200,
+      "text": "Không có thông tin mới cần lưu; bộ nhớ được giữ nguyên.",
+      "model": "iTis Memory",
+      "provider": "openai",
+      "conversationId": "23116673-a307-4c04-8dfc-6950adb16d27",
+      "attachments": [],
+      "memory": {
+        "status": "unchanged",
+        "notice": "Không có thông tin mới cần lưu; bộ nhớ được giữ nguyên.",
+        "changed": 0,
+        "questions": [],
+        "usage": {
+          "input_tokens": 547,
+          "output_tokens": 180,
+          "total_tokens": 727
+        }
+      },
+      "usage": {
+        "input_tokens": 547,
+        "output_tokens": 180,
+        "total_tokens": 727
+      }
+    },
+    {
+      "name": "03-explicit-correction",
+      "seconds": 2.888,
+      "status": 200,
+      "text": "Đã cập nhật bộ nhớ: Người dùng muốn được gọi là Lan.",
+      "model": "iTis Memory",
+      "provider": "openai",
+      "conversationId": "e7188b18-90b8-4ae5-bdb7-c4162cc582ca",
+      "attachments": [],
+      "memory": {
+        "status": "saved",
+        "notice": "Đã cập nhật bộ nhớ: Người dùng muốn được gọi là Lan.",
+        "changed": 1,
+        "questions": [],
+        "usage": {
+          "input_tokens": 545,
+          "output_tokens": 206,
+          "total_tokens": 751
+        }
+      },
+      "usage": {
+        "input_tokens": 545,
+        "output_tokens": 206,
+        "total_tokens": 751
+      }
+    },
+    {
+      "name": "04-ambiguous-conflict",
+      "seconds": 4.361,
+      "status": 200,
+      "text": "Chưa cập nhật bộ nhớ: Bạn muốn được gọi là Lan hay Hương?",
+      "model": "iTis Memory",
+      "provider": "openai",
+      "conversationId": "32a77264-5e5a-45b6-b7ef-2cc19786bb1a",
+      "attachments": [],
+      "memory": {
+        "status": "conflict",
+        "notice": "Chưa cập nhật bộ nhớ: Bạn muốn được gọi là Lan hay Hương?",
+        "changed": 0,
+        "questions": [
+          "Bạn muốn được gọi là Lan hay Hương?"
+        ],
+        "usage": {
+          "input_tokens": 524,
+          "output_tokens": 219,
+          "total_tokens": 743
+        }
+      },
+      "usage": {
+        "input_tokens": 524,
+        "output_tokens": 219,
+        "total_tokens": 743
+      }
+    },
+    {
+      "name": "05-cross-chat-recall",
+      "seconds": 3.517,
+      "status": 200,
+      "text": "Bạn muốn được gọi là **Lan** và báo cáo kế toán cần **đầy đủ số liệu, có bảng**.",
+      "model": "gpt-6.1-sol",
+      "provider": "openai",
+      "webSearchUsed": false,
+      "attachments": [],
+      "conversationId": "71d3ec04-4c05-4a4f-88ee-5b2724e7e6e5",
+      "conversationTitle": "Tên gọi của tôi là gì và tôi muốn báo cáo kế toán trình bày thế nào? Trả",
+      "maxContextTokens": 50000,
+      "usage": {
+        "input_tokens": 451,
+        "output_tokens": 29,
+        "total_tokens": 480
+      },
+      "estimated_cost_usd": 0.001192,
+      "cycle": {
+        "used": 3270,
+        "limit": 100000,
+        "unlimited": false
+      },
+      "total": {
+        "used": 3270,
+        "limit": 1000000,
+        "unlimited": false
+      }
+    },
+    {
+      "name": "06-edit-undo-and-account-isolation",
+      "passed": true
+    },
+    {
+      "name": "07-no-task-pollution",
+      "seconds": 1.716,
+      "status": 200,
+      "text": "- Xác định mục đích và phạm vi tài liệu.\n- Thu thập, kiểm tra và sắp xếp thông tin liên quan.",
+      "model": "gpt-6-luna",
+      "provider": "openai",
+      "webSearchUsed": false,
+      "attachments": [],
+      "conversationId": "81c2d1da-3cfb-44ad-abdf-7befb439ee1a",
+      "conversationTitle": "Tôi muốn bạn liệt kê 2 bước chuẩn bị tài liệu. Chỉ trả lời 2 gạch đầu dò",
+      "maxContextTokens": 50000,
+      "usage": {
+        "input_tokens": 403,
+        "output_tokens": 34,
+        "total_tokens": 437
+      },
+      "estimated_cost_usd": 0.000057300000000000004,
+      "cycle": {
+        "used": 4255,
+        "limit": 100000,
+        "unlimited": false
+      },
+      "total": {
+        "used": 4255,
+        "limit": 1000000,
+        "unlimited": false
+      }
+    },
+    {
+      "name": "08-explicit-with-auto-off",
+      "seconds": 1.539,
+      "status": 200,
+      "text": "Không có thông tin mới cần lưu; bộ nhớ được giữ nguyên.",
+      "model": "iTis Memory",
+      "provider": "openai",
+      "conversationId": "1715ab82-3b76-47a4-b22c-f1809c70abf7",
+      "attachments": [],
+      "memory": {
+        "status": "unchanged",
+        "notice": "Không có thông tin mới cần lưu; bộ nhớ được giữ nguyên.",
+        "changed": 0,
+        "questions": [],
+        "usage": {
+          "input_tokens": 530,
+          "output_tokens": 62,
+          "total_tokens": 592
+        }
+      },
+      "usage": {
+        "input_tokens": 530,
+        "output_tokens": 62,
+        "total_tokens": 592
+      }
+    }
+  ],
+  "usage": [
+    {
+      "model": "gpt-6-luna",
+      "router_reason": "memory_consolidation",
+      "input_tokens": 419,
+      "output_tokens": 150,
+      "estimated_cost_usd": "0.00011690"
+    },
+    {
+      "model": "gpt-6-luna",
+      "router_reason": "memory_consolidation",
+      "input_tokens": 547,
+      "output_tokens": 180,
+      "estimated_cost_usd": "0.00014470"
+    },
+    {
+      "model": "gpt-6-luna",
+      "router_reason": "memory_consolidation",
+      "input_tokens": 545,
+      "output_tokens": 206,
+      "estimated_cost_usd": "0.00015750"
+    },
+    {
+      "model": "gpt-6-luna",
+      "router_reason": "memory_consolidation",
+      "input_tokens": 524,
+      "output_tokens": 219,
+      "estimated_cost_usd": "0.00016190"
+    },
+    {
+      "model": "gpt-6-luna",
+      "router_reason": "memory_consolidation",
+      "input_tokens": 535,
+      "output_tokens": 13,
+      "estimated_cost_usd": "0.00006000"
+    },
+    {
+      "model": "gpt-6.1-sol",
+      "router_reason": "openai_complex",
+      "input_tokens": 451,
+      "output_tokens": 29,
+      "estimated_cost_usd": "0.00119200"
+    },
+    {
+      "model": "gpt-6-luna",
+      "router_reason": "openai_efficient",
+      "input_tokens": 403,
+      "output_tokens": 34,
+      "estimated_cost_usd": "0.00005730"
+    },
+    {
+      "model": "gpt-6-luna",
+      "router_reason": "memory_consolidation",
+      "input_tokens": 530,
+      "output_tokens": 62,
+      "estimated_cost_usd": "0.00008400"
+    }
+  ],
+  "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ 'unchanged'\n- 'saved'\n"
+}

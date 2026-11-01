@@ -1,13 +1,24 @@
-import { env } from "cloudflare:workers";
-import { drizzle } from "drizzle-orm/d1";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 import * as schema from "./schema";
 
-export function getDb() {
-  if (!env.DB) {
-    throw new Error(
-      "Cloudflare D1 binding `DB` is unavailable. Set the `d1` field in .openai/hosting.json to `DB` or let your control plane inject the real binding values before using the database."
-    );
-  }
+declare global {
+  var __itisPostgresPool: Pool | undefined;
+}
 
-  return drizzle(env.DB, { schema });
+function createPool() {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error("DATABASE_URL chưa được cấu hình cho PostgreSQL local.");
+  return new Pool({
+    connectionString,
+    max: 10,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 5_000,
+  });
+}
+
+export function getDb() {
+  const pool = globalThis.__itisPostgresPool ?? createPool();
+  globalThis.__itisPostgresPool = pool;
+  return drizzle(pool, { schema });
 }

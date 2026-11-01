@@ -1,0 +1,8 @@
+{
+  "spreadsheetIndependentDecimalCheck": true,
+  "cachedFormulaValues": true,
+  "expectedTotal": "91.93",
+  "pdfSourceParagraphsRetained": true,
+  "pdfPages": 2,
+  "scope": "Text/content/OOXML checks, not visual Office layout inspection"
+}

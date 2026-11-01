@@ -1,0 +1,71 @@
+name: itis-local
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    container_name: itis-app
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://itis:itis_local_7F9kQ2mV4pR8@postgres:5432/itis
+      REDIS_URL: redis://:itis_redis_local@redis:6379/0
+      SESSION_SECRET: ${SESSION_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LOCAL_AI_BASE_URL: http://host.docker.internal:1234/v1
+      LOCAL_AI_GENERAL_MODEL: qwen/qwen3.5-9b
+      LOCAL_AI_CODE_MODEL: deepseek-coder-v2-lite-instruct
+      LOCAL_EMBEDDING_MODEL: text-embedding-nomic-embed-text-v1.5
+      GENERATED_IMAGES_DIR: /app/storage/generated
+      GENERATED_FILES_DIR: /app/storage/files
+      COMFYUI_BASE_URL: http://host.docker.internal:8188
+      NODE_ENV: production
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "0.0.0.0:5173:5173"
+    volumes:
+      - itis_generated_images:/app/storage/generated
+      - itis_generated_files:/app/storage/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: itis-postgres
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - itis_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U itis -d itis"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: itis-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${ITIS_REDIS_PASSWORD:-itis_redis_local}"]
+    ports:
+      - "127.0.0.1:56379:6379"
+    volumes:
+      - itis_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${ITIS_REDIS_PASSWORD:-itis_redis_local}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  itis_postgres_data:
+  itis_redis_data:
+  itis_generated_images:
+  itis_generated_files:

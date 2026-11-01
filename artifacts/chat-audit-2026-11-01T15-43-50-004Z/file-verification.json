@@ -1,0 +1,100 @@
+[
+  {
+    "file": "bao-cao-cap-nhat.xlsx",
+    "bytes": 9898,
+    "zipIntegrity": true,
+    "formulas": [
+      {
+        "cell": "E6",
+        "formula": "C6*D6",
+        "value": "480000"
+      },
+      {
+        "cell": "E7",
+        "formula": "C7*D7",
+        "value": "240000"
+      },
+      {
+        "cell": "E8",
+        "formula": "C8*D8",
+        "value": "150000"
+      },
+      {
+        "cell": "E10",
+        "formula": "SUM(E6:E8)",
+        "value": "870000"
+      },
+      {
+        "cell": "E12",
+        "formula": "E10*E11",
+        "value": "87000"
+      },
+      {
+        "cell": "E13",
+        "formula": "E10+E12",
+        "value": "957000"
+      }
+    ],
+    "hasCachedExpectedTotal": true,
+    "note": "Formula semantics and displayed cached totals need both checks; XML alone is not a full spreadsheet engine."
+  },
+  {
+    "file": "bao-cao.docx",
+    "bytes": 37217,
+    "zipIntegrity": true,
+    "hasExpectedTotal": true
+  },
+  {
+    "file": "bao-cao.pdf",
+    "bytes": 74532,
+    "pages": 1,
+    "hasExpectedTotal": true,
+    "hasVietnamese": true
+  },
+  {
+    "file": "bao-cao.pptx",
+    "bytes": 108419,
+    "zipIntegrity": true,
+    "slideCount": 2,
+    "hasExpectedTotal": true
+  },
+  {
+    "file": "bao-cao.xlsx",
+    "bytes": 9874,
+    "zipIntegrity": true,
+    "formulas": [
+      {
+        "cell": "E6",
+        "formula": "C6*D6",
+        "value": "240000"
+      },
+      {
+        "cell": "E7",
+        "formula": "C7*D7",
+        "value": "240000"
+      },
+      {
+        "cell": "E8",
+        "formula": "C8*D8",
+        "value": "150000"
+      },
+      {
+        "cell": "E10",
+        "formula": "SUM(E6:E8)",
+        "value": "630000"
+      },
+      {
+        "cell": "E12",
+        "formula": "E10*E11",
+        "value": "63000"
+      },
+      {
+        "cell": "E13",
+        "formula": "E10+E12",
+        "value": "693000"
+      }
+    ],
+    "hasCachedExpectedTotal": true,
+    "note": "Formula semantics and displayed cached totals need both checks; XML alone is not a full spreadsheet engine."
+  }
+]

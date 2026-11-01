@@ -1,0 +1,9 @@
+{
+  "wordCreate": true,
+  "wordEdit": true,
+  "unchangedWordParts": true,
+  "excelFormulas": true,
+  "excelTotal": 957000,
+  "powerPointSlides": 3,
+  "scope": "Content and package checks; not full visual rendering."
+}

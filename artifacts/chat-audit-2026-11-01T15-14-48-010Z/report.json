@@ -1,0 +1,21 @@
+{
+  "startedAt": "2026-11-01T15:14:48.016Z",
+  "cases": [
+    {
+      "name": "01-stream-basic",
+      "status": 200,
+      "elapsedMs": 1492,
+      "events": [
+        "meta",
+        "error"
+      ],
+      "streamError": {
+        "type": "error",
+        "error": "Dịch vụ AI không khả dụng. Tin nhắn đã được lưu để bạn thử lại."
+      }
+    }
+  ],
+  "usage": [],
+  "failure": "Error: Basic provider request failed; stop paid tests.",
+  "finishedAt": "2026-11-01T15:14:49.564Z"
+}

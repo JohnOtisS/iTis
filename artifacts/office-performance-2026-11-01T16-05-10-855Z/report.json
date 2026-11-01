@@ -1,0 +1,59 @@
+{
+  "cases": [
+    {
+      "name": "01-word-create",
+      "status": 200,
+      "seconds": 27.66,
+      "text": "Đã xử lý và kiểm tra kết quả.",
+      "model": "gpt-6.1-sol",
+      "provider": "openai",
+      "conversationId": "946e18e4-aefd-47a8-9f01-694adb62e0d0",
+      "attachments": [
+        {
+          "name": "JD_Junior_Backend_Developer_SOURCE-742.docx",
+          "url": "/api/files/0f125452-9536-4fb8-a910-48f099817b93.docx",
+          "type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size": 39489,
+          "kind": "output",
+          "family": "/api/files/0f125452-9536-4fb8-a910-48f099817b93.docx",
+          "version": 1,
+          "sourceUrls": []
+        }
+      ],
+      "usage": {
+        "input_tokens": 8063,
+        "output_tokens": 1644,
+        "total_tokens": 9707,
+        "cached_tokens": 0,
+        "estimated_cost_usd": 0.062566,
+        "tool_cost_usd": 0.03
+      },
+      "jobId": "e62d1c44-79a9-4226-9f44-aa47ea9114fc",
+      "verification": {
+        "checks": 4,
+        "passed": true
+      },
+      "estimated_cost_usd": 0.062566
+    }
+  ],
+  "usage": [
+    {
+      "router_reason": "document_job",
+      "model": "gpt-6.1-sol",
+      "input_tokens": 8063,
+      "output_tokens": 1644,
+      "tool_cost_usd": "0.03000000",
+      "estimated_cost_usd": "0.06256600",
+      "tool_details": {
+        "pipeline": "tools",
+        "estimated": true,
+        "containers": 1,
+        "responseStatus": "completed",
+        "usageAvailable": true,
+        "webSearchCalls": 0,
+        "containerMemory": "1g"
+      }
+    }
+  ],
+  "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ undefined\n- 'fast_word_create'\n"
+}

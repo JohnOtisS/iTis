@@ -1,0 +1,1 @@
+ALTER TABLE "image_generations" ALTER COLUMN "stage" SET DEFAULT 'Queued';

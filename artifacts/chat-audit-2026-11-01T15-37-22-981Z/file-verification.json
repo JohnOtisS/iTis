@@ -1,0 +1,100 @@
+[
+  {
+    "file": "bao-cao-cap-nhat.xlsx",
+    "bytes": 5557,
+    "zipIntegrity": true,
+    "formulas": [
+      {
+        "cell": "E2",
+        "formula": "C2*D2",
+        "value": "480000"
+      },
+      {
+        "cell": "E3",
+        "formula": "C3*D3",
+        "value": "240000"
+      },
+      {
+        "cell": "E4",
+        "formula": "C4*D4",
+        "value": "150000"
+      },
+      {
+        "cell": "E6",
+        "formula": "SUM(E2:E4)",
+        "value": "870000"
+      },
+      {
+        "cell": "E8",
+        "formula": "E6*E7",
+        "value": "87000.0"
+      },
+      {
+        "cell": "E9",
+        "formula": "E6+E8",
+        "value": "957000.0"
+      }
+    ],
+    "hasCachedExpectedTotal": false,
+    "note": "Formula semantics and displayed cached totals need both checks; XML alone is not a full spreadsheet engine."
+  },
+  {
+    "file": "bao-cao.docx",
+    "bytes": 37124,
+    "zipIntegrity": true,
+    "hasExpectedTotal": true
+  },
+  {
+    "file": "bao-cao.pdf",
+    "bytes": 62068,
+    "pages": 1,
+    "hasExpectedTotal": true,
+    "hasVietnamese": true
+  },
+  {
+    "file": "bao-cao.pptx",
+    "bytes": 103092,
+    "zipIntegrity": true,
+    "slideCount": 2,
+    "hasExpectedTotal": true
+  },
+  {
+    "file": "bao-cao.xlsx",
+    "bytes": 7971,
+    "zipIntegrity": true,
+    "formulas": [
+      {
+        "cell": "E2",
+        "formula": "C2*D2",
+        "value": "240000"
+      },
+      {
+        "cell": "E3",
+        "formula": "C3*D3",
+        "value": "240000"
+      },
+      {
+        "cell": "E4",
+        "formula": "C4*D4",
+        "value": "150000"
+      },
+      {
+        "cell": "E6",
+        "formula": "SUM(E2:E4)",
+        "value": "630000"
+      },
+      {
+        "cell": "E8",
+        "formula": "E6*E7",
+        "value": "63000"
+      },
+      {
+        "cell": "E9",
+        "formula": "E6+E8",
+        "value": "693000"
+      }
+    ],
+    "hasCachedExpectedTotal": true,
+    "note": "Formula semantics and displayed cached totals need both checks; XML alone is not a full spreadsheet engine."
+  }
+]

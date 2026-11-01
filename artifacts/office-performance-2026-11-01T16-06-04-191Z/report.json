@@ -1,0 +1,220 @@
+{
+  "cases": [
+    {
+      "name": "01-word-create",
+      "status": 200,
+      "seconds": 19.15,
+      "text": "Bản mô tả tuyển dụng Backend Developer Junior; thông tin chưa được cung cấp được đánh dấu bằng placeholder.",
+      "model": "gpt-6-luna",
+      "provider": "openai",
+      "conversationId": "b3f8bb7d-5487-4f0b-b59e-42cef8ccc691",
+      "attachments": [
+        {
+          "name": "JD_Backend_Developer_Junior_SOURCE-742.docx",
+          "url": "/api/files/134b4032-b9d1-4db4-8747-4f2ba75c3f68.docx",
+          "type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size": 4120,
+          "kind": "output",
+          "family": "/api/files/134b4032-b9d1-4db4-8747-4f2ba75c3f68.docx",
+          "version": 1,
+          "sourceUrls": []
+        }
+      ],
+      "usage": {
+        "input_tokens": 501,
+        "output_tokens": 1579,
+        "total_tokens": 2080,
+        "cached_tokens": 0,
+        "estimated_cost_usd": 0.0008396,
+        "tool_cost_usd": 0
+      },
+      "jobId": "10937e04-71af-468e-b308-91f9d94435d7",
+      "pipeline": "fast_word_create",
+      "verification": {
+        "checks": 2,
+        "passed": true
+      },
+      "estimated_cost_usd": 0.0008396
+    },
+    {
+      "name": "02-word-edit",
+      "status": 200,
+      "seconds": 4.74,
+      "text": "Thay tên vị trí trong tiêu đề và nội dung ứng tuyển; giữ nguyên mã SOURCE-742 và các nội dung khác.",
+      "model": "gpt-6-luna",
+      "provider": "openai",
+      "conversationId": "18f80f3c-6095-4536-a583-bc4f8b87644d",
+      "attachments": [
+        {
+          "name": "source-updated.docx",
+          "url": "/api/files/06373d6f-07f3-48c6-922b-2bd249c5ceaf.docx",
+          "type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size": 4129,
+          "kind": "output",
+          "family": "/api/files/ff015790-7e1d-44a0-9c75-0651d27f6a83.docx",
+          "version": 2,
+          "sourceUrls": [
+            "/api/files/ff015790-7e1d-44a0-9c75-0651d27f6a83.docx"
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 1253,
+        "output_tokens": 249,
+        "total_tokens": 1502,
+        "cached_tokens": 0,
+        "estimated_cost_usd": 0.0002498,
+        "tool_cost_usd": 0
+      },
+      "jobId": "09128ca1-5f1d-40df-b49a-136eb986cd7d",
+      "pipeline": "fast_word_edit",
+      "verification": {
+        "checks": 3,
+        "passed": true
+      },
+      "estimated_cost_usd": 0.0002498
+    },
+    {
+      "name": "03-excel-analyze-edit",
+      "status": 200,
+      "seconds": 36.12,
+      "text": "Đối chiếu `orders.xlsx`, sheet `Bao cao`:\n\n| Dòng / ô nguồn | Trước sửa | Sau sửa |\n|---|---:|---:|\n| Alpha — C6:E6 | 2 × 120.000 = 240.000 | 4 × 120.000 = 480.000 |\n| Beta — C7:E7 | 3 × 80.000 = 240.000 | Không đổi |\n| Gamma — C8:E8 | 1 × 150.000 = 150.000 | Không đổi |\n| Tổng trước VAT — E10 | 630.000 | **870.000** |\n| VAT 10% — E11:E12 | 63.000 | **87.000** |\n| Tổng sau VAT — E13 | 693.000 | **957.000** |\n\nĐã giữ nguyên đơn giá, cập nhật và kiểm tra công thức thành tiền, tổng, VAT trong XLSX. File nguồn không ghi đơn vị tiền tệ (`Bao cao!A3`).",
+      "model": "gpt-6.1-sol",
+      "provider": "openai",
+      "conversationId": "31116b26-6a61-41db-afd9-c1fa6fc359b6",
+      "attachments": [
+        {
+          "name": "orders_updated.xlsx",
+          "url": "/api/files/cb62d44f-405f-4dee-bfee-a14960e23d5b.xlsx",
+          "type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "size": 7388,
+          "kind": "output",
+          "family": "/api/files/e07b999b-ee39-4fed-8f1e-8b4548a72937.xlsx",
+          "version": 2,
+          "sourceUrls": [
+            "/api/files/e07b999b-ee39-4fed-8f1e-8b4548a72937.xlsx"
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 3935,
+        "output_tokens": 1251,
+        "total_tokens": 5186,
+        "cached_tokens": 0,
+        "estimated_cost_usd": 0.05038,
+        "tool_cost_usd": 0.03
+      },
+      "jobId": "209f0b7a-9805-4020-8ba9-1fbf8a86577e",
+      "verification": {
+        "checks": 5,
+        "passed": true
+      },
+      "estimated_cost_usd": 0.05038
+    },
+    {
+      "name": "04-powerpoint-create",
+      "status": 200,
+      "seconds": 41.19,
+      "text": "— tiếng Việt, không có ảnh, mã **QA-DECK-742** ở slide cuối.",
+      "model": "gpt-6.1-sol",
+      "provider": "openai",
+      "conversationId": "f5a0fab3-f426-460c-aa81-6b5adee3b230",
+      "attachments": [
+        {
+          "name": "Ho_so_xin_viec_IT_Developer.pptx",
+          "url": "/api/files/2f276b10-289c-4b7a-ac11-3bcb5a1f1a4c.pptx",
+          "type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          "size": 102603,
+          "kind": "output",
+          "family": "/api/files/2f276b10-289c-4b7a-ac11-3bcb5a1f1a4c.pptx",
+          "version": 1,
+          "sourceUrls": []
+        }
+      ],
+      "usage": {
+        "input_tokens": 3849,
+        "output_tokens": 1968,
+        "total_tokens": 5817,
+        "cached_tokens": 1499,
+        "estimated_cost_usd": 0.0545299,
+        "tool_cost_usd": 0.03
+      },
+      "jobId": "4cb773c7-0e40-4186-af00-04c876070817",
+      "verification": {
+        "checks": 4,
+        "passed": true
+      },
+      "estimated_cost_usd": 0.0545299
+    }
+  ],
+  "usage": [
+    {
+      "router_reason": "fast_word_create",
+      "model": "gpt-6-luna",
+      "input_tokens": 501,
+      "output_tokens": 1579,
+      "tool_cost_usd": "0.00000000",
+      "estimated_cost_usd": "0.00083960",
+      "tool_details": {
+        "pipeline": "fast_word_create",
+        "estimated": true,
+        "containers": 0,
+        "responseStatus": "completed",
+        "usageAvailable": true,
+        "webSearchCalls": 0,
+        "containerMemory": "1g"
+      }
+    },
+    {
+      "router_reason": "fast_word_edit",
+      "model": "gpt-6-luna",
+      "input_tokens": 1253,
+      "output_tokens": 249,
+      "tool_cost_usd": "0.00000000",
+      "estimated_cost_usd": "0.00024980",
+      "tool_details": {
+        "pipeline": "fast_word_edit",
+        "estimated": true,
+        "containers": 0,
+        "responseStatus": "completed",
+        "usageAvailable": true,
+        "webSearchCalls": 0,
+        "containerMemory": "1g"
+      }
+    },
+    {
+      "router_reason": "document_job",
+      "model": "gpt-6.1-sol",
+      "input_tokens": 3935,
+      "output_tokens": 1251,
+      "tool_cost_usd": "0.03000000",
+      "estimated_cost_usd": "0.05038000",
+      "tool_details": {
+        "pipeline": "tools",
+        "estimated": true,
+        "containers": 1,
+        "responseStatus": "completed",
+        "usageAvailable": true,
+        "webSearchCalls": 0,
+        "containerMemory": "1g"
+      }
+    },
+    {
+      "router_reason": "document_job",
+      "model": "gpt-6.1-sol",
+      "input_tokens": 3849,
+      "output_tokens": 1968,
+      "tool_cost_usd": "0.03000000",
+      "estimated_cost_usd": "0.05452990",
+      "tool_details": {
+        "pipeline": "tools",
+        "estimated": true,
+        "containers": 1,
+        "responseStatus": "completed",
+        "usageAvailable": true,
+        "webSearchCalls": 0,
+        "containerMemory": "1g"
+      }
+    }
+  ]
+}

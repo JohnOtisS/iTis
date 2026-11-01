@@ -1,0 +1,97 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1791193390446,
+      "tag": "0000_previous_rafael_vega",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791256625192,
+      "tag": "0001_flawless_brood",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791257566536,
+      "tag": "0002_romantic_overlord",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791261664545,
+      "tag": "0003_many_magik",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791263455749,
+      "tag": "0004_volatile_pepper_potts",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791346866720,
+      "tag": "0005_swift_misty_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791347492059,
+      "tag": "0006_lazy_rawhide_kid",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791365556304,
+      "tag": "0007_rare_mach_iv",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793544651910,
+      "tag": "0008_sour_bloodaxe",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793545836704,
+      "tag": "0009_polite_xorn",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793547211618,
+      "tag": "0010_misty_supernaut",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793550000000,
+      "tag": "0011_distinct_role_plans",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793555000000,
+      "tag": "0012_memory_consolidation",
+      "breakpoints": true
+    }
+  ]
+}

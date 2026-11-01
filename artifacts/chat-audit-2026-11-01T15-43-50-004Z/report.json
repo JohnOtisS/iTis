@@ -1,0 +1,424 @@
+{
+  "startedAt": "2026-11-01T15:43:50.006Z",
+  "cases": [
+    {
+      "name": "01-stream-basic",
+      "status": 200,
+      "elapsedMs": 1693,
+      "type": "done",
+      "text": "15",
+      "model": "gpt-6-luna",
+      "provider": "openai",
+      "conversationId": "c666ddcb-648e-4218-a56c-9eddd9e5c28e",
+      "conversationTitle": "Một hộp có 12 món, bán 5 món rồi nhập thêm 8 món. Còn bao nhiêu? Chỉ trả",
+      "usage": {
+        "input_tokens": 313,
+        "output_tokens": 31,
+        "total_tokens": 344
+      },
+      "estimated_cost_usd": 0.0000468,
+      "stopped": false,
+      "cycle": {
+        "used": 344,
+        "limit": 250000,
+        "unlimited": false
+      },
+      "total": {
+        "used": 344,
+        "limit": 3000000,
+        "unlimited": false
+      },
+      "events": [
+        "meta",
+        "delta",
+        "done"
+      ]
+    },
+    {
+      "name": "01b-json-basic",
+      "status": 200,
+      "elapsedMs": 1905,
+      "text": "15",
+      "model": "gpt-6-luna",
+      "provider": "openai",
+      "webSearchUsed": false,
+      "attachments": [],
+      "conversationId": "8d9dceb3-95a6-4b20-996c-29f6870763d0",
+      "conversationTitle": "Một hộp có 12 món, bán 5 món rồi nhập thêm 8 món. Còn bao nhiêu? Chỉ trả",
+      "maxContextTokens": 50000,
+      "usage": {
+        "input_tokens": 313,
+        "output_tokens": 31,
+        "total_tokens": 344
+      },
+      "estimated_cost_usd": 0.0000468,
+      "cycle": {
+        "used": 688,
+        "limit": 250000,
+        "unlimited": false
+      },
+      "total": {
+        "used": 688,
+        "limit": 3000000,
+        "unlimited": false
+      }
+    },
+    {
+      "name": "02-follow-up",
+      "status": 200,
+      "elapsedMs": 1056,
+      "text": "5",
+      "model": "gpt-6-luna",
+      "provider": "openai",
+      "webSearchUsed": false,
+      "attachments": [],
+      "conversationId": "8d9dceb3-95a6-4b20-996c-29f6870763d0",
+      "conversationTitle": "Một hộp có 12 món, bán 5 món rồi nhập thêm 8 món. Còn bao nhiêu? Chỉ trả",
+      "maxContextTokens": 50000,
+      "usage": {
+        "input_tokens": 349,
+        "output_tokens": 24,
+        "total_tokens": 373
+      },
+      "estimated_cost_usd": 0.0000469,
+      "cycle": {
+        "used": 1061,
+        "limit": 250000,
+        "unlimited": false
+      },
+      "total": {
+        "used": 1061,
+        "limit": 3000000,
+        "unlimited": false
+      }
+    },
+    {
+      "name": "03-auto-memory",
+      "status": 200,
+      "elapsedMs": 1569,
+      "text": "Đã nhớ trong cuộc trò chuyện này: mã quy trình HanhTinh là **SEN-XANH-742**.",
+      "model": "gpt-6-luna",
+      "provider": "openai",
+      "webSearchUsed": false,
+      "attachments": [],
+      "conversationId": "91bce03c-01b4-42a8-853c-5c33377dfd0c",
+      "conversationTitle": "Hãy nhớ: quy trình HanhTinh của tôi có mã xác nhận SEN-XANH-742. Khi tôi",
+      "maxContextTokens": 50000,
+      "usage": {
+        "input_tokens": 330,
+        "output_tokens": 54,
+        "total_tokens": 384
+      },
+      "estimated_cost_usd": 0.00006,
+      "cycle": {
+        "used": 1445,
+        "limit": 250000,
+        "unlimited": false
+      },
+      "total": {
+        "used": 1445,
+        "limit": 3000000,
+        "unlimited": false
+      }
+    },
+    {
+      "name": "04-memory-across-chats",
+      "status": 200,
+      "elapsedMs": 1365,
+      "text": "SEN-XANH-742",
+      "model": "gpt-6-luna",
+      "provider": "openai",
+      "webSearchUsed": false,
+      "attachments": [],
+      "conversationId": "cef7e7cb-252a-4de3-b34d-a0cbbbff59da",
+      "conversationTitle": "Mã xác nhận quy trình HanhTinh của tôi là gì? Chỉ trả mã nếu biết, không",
+      "maxContextTokens": 50000,
+      "usage": {
+        "input_tokens": 395,
+        "output_tokens": 11,
+        "total_tokens": 406
+      },
+      "estimated_cost_usd": 0.000045,
+      "cycle": {
+        "used": 1851,
+        "limit": 250000,
+        "unlimited": false
+      },
+      "total": {
+        "used": 1851,
+        "limit": 3000000,
+        "unlimited": false
+      }
+    },
+    {
+      "name": "05-other-account-isolation",
+      "status": 200,
+      "elapsedMs": 1364,
+      "text": "không biết",
+      "model": "gpt-6-luna",
+      "provider": "openai",
+      "webSearchUsed": false,
+      "attachments": [],
+      "conversationId": "8e4002b4-6bb1-4045-935c-0e152b26d90b",
+      "conversationTitle": "Mã xác nhận quy trình HanhTinh của tôi là gì? Chỉ trả mã nếu biết, không",
+      "maxContextTokens": 50000,
+      "usage": {
+        "input_tokens": 311,
+        "output_tokens": 7,
+        "total_tokens": 318
+      },
+      "estimated_cost_usd": 0.0000346,
+      "cycle": {
+        "used": 318,
+        "limit": 250000,
+        "unlimited": false
+      },
+      "total": {
+        "used": 318,
+        "limit": 3000000,
+        "unlimited": false
+      }
+    },
+    {
+      "name": "06-csv-analysis",
+      "status": 200,
+      "elapsedMs": 156562,
+      "text": "Dòng trong `synthetic-orders.csv` | Item | Số lượng | Đơn giá | Thành tiền |\n|---|---|---:|---:|---:|\n| 2 (dữ liệu 1) | Alpha | 2 | 120.000 | 240.000 |\n| 3 (dữ liệu 2) | Beta | 3 | 80.000 | 240.000 |\n| 4 (dữ liệu 3) | Gamma | 1 | 150.000 | 150.000 |\n| **Tổng trước VAT** **630.000** |\n| **VAT giả định 10%** **63.000** |\n| **Tổng sau VAT** **693.000** |",
+      "model": "gpt-6.1-sol",
+      "provider": "openai",
+      "conversationId": "2bd63662-b552-4a0d-9120-08b9f7a36030",
+      "attachments": [],
+      "usage": {
+        "input_tokens": 5836,
+        "output_tokens": 1285,
+        "total_tokens": 7121,
+        "cached_tokens": 0,
+        "estimated_cost_usd": 0.054522,
+        "tool_cost_usd": 0.03
+      },
+      "jobId": "ea70eca5-45b7-4cd0-a4cb-187238e3a74d",
+      "verification": {
+        "checks": 6,
+        "passed": true
+      },
+      "estimated_cost_usd": 0.054522
+    },
+    {
+      "name": "07-generate-four-formats",
+      "status": 200,
+      "elapsedMs": 85257,
+      "text": "Đã kiểm tra số liệu và đủ 4 file; PPTX đúng 2 slide, không tạo ảnh.",
+      "model": "gpt-6.1-sol",
+      "provider": "openai",
+      "conversationId": "2bd63662-b552-4a0d-9120-08b9f7a36030",
+      "attachments": [
+        {
+          "name": "bao-cao.xlsx",
+          "url": "/api/files/52129fd0-fee8-4d77-bdae-391c7990c1e0.xlsx",
+          "type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "size": 9874,
+          "kind": "output",
+          "family": "/api/files/52129fd0-fee8-4d77-bdae-391c7990c1e0.xlsx",
+          "version": 1,
+          "sourceUrls": [
+            "/api/files/712e4d8b-de45-448d-a705-2e4afce65296.csv"
+          ]
+        },
+        {
+          "name": "bao-cao.docx",
+          "url": "/api/files/c61fc5c9-8799-40b7-b979-6191c6b10d22.docx",
+          "type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size": 37217,
+          "kind": "output",
+          "family": "/api/files/c61fc5c9-8799-40b7-b979-6191c6b10d22.docx",
+          "version": 1,
+          "sourceUrls": [
+            "/api/files/712e4d8b-de45-448d-a705-2e4afce65296.csv"
+          ]
+        },
+        {
+          "name": "bao-cao.pdf",
+          "url": "/api/files/977e9ca5-e745-45ba-a1df-419c964a5314.pdf",
+          "type": "application/pdf",
+          "size": 74532,
+          "kind": "output",
+          "family": "/api/files/977e9ca5-e745-45ba-a1df-419c964a5314.pdf",
+          "version": 1,
+          "sourceUrls": [
+            "/api/files/712e4d8b-de45-448d-a705-2e4afce65296.csv"
+          ]
+        },
+        {
+          "name": "bao-cao.pptx",
+          "url": "/api/files/62c46fd6-3271-4afe-a5ba-5c6da77d8bfa.pptx",
+          "type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          "size": 108419,
+          "kind": "output",
+          "family": "/api/files/62c46fd6-3271-4afe-a5ba-5c6da77d8bfa.pptx",
+          "version": 1,
+          "sourceUrls": [
+            "/api/files/712e4d8b-de45-448d-a705-2e4afce65296.csv"
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 16546,
+        "output_tokens": 4425,
+        "total_tokens": 20971,
+        "cached_tokens": 0,
+        "estimated_cost_usd": 0.10734199999999999,
+        "tool_cost_usd": 0.03
+      },
+      "jobId": "136336cf-bbf3-4529-ac70-2149fc0f0d13",
+      "verification": {
+        "checks": 12,
+        "passed": true
+      },
+      "estimated_cost_usd": 0.10734199999999999
+    },
+    {
+      "name": "download:bao-cao.xlsx",
+      "status": 200,
+      "bytes": 9874,
+      "signature": "504b030414000808"
+    },
+    {
+      "name": "cross-account-download:bao-cao.xlsx",
+      "status": 404
+    },
+    {
+      "name": "download:bao-cao.docx",
+      "status": 200,
+      "bytes": 37217,
+      "signature": "504b030414000000"
+    },
+    {
+      "name": "cross-account-download:bao-cao.docx",
+      "status": 404
+    },
+    {
+      "name": "download:bao-cao.pdf",
+      "status": 200,
+      "bytes": 74532,
+      "signature": "255044462d312e37"
+    },
+    {
+      "name": "cross-account-download:bao-cao.pdf",
+      "status": 404
+    },
+    {
+      "name": "download:bao-cao.pptx",
+      "status": 200,
+      "bytes": 108419,
+      "signature": "504b03040a000000"
+    },
+    {
+      "name": "cross-account-download:bao-cao.pptx",
+      "status": 404
+    },
+    {
+      "name": "08-edit-previous-files",
+      "status": 200,
+      "elapsedMs": 37609,
+      "text": "Tổng sau VAT: **957.000** (sheet `Bao cao`, ô E13).",
+      "model": "gpt-6.1-sol",
+      "provider": "openai",
+      "conversationId": "2bd63662-b552-4a0d-9120-08b9f7a36030",
+      "attachments": [
+        {
+          "name": "bao-cao-cap-nhat.xlsx",
+          "url": "/api/files/7a80c7ab-986f-4cd5-98ee-ec25be0d4856.xlsx",
+          "type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "size": 9898,
+          "kind": "output",
+          "family": "/api/files/52129fd0-fee8-4d77-bdae-391c7990c1e0.xlsx",
+          "version": 2,
+          "sourceUrls": [
+            "/api/files/52129fd0-fee8-4d77-bdae-391c7990c1e0.xlsx"
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 3781,
+        "output_tokens": 622,
+        "total_tokens": 4403,
+        "cached_tokens": 0,
+        "estimated_cost_usd": 0.043782,
+        "tool_cost_usd": 0.03
+      },
+      "jobId": "344f81b6-5e80-41a2-957d-07868995cffe",
+      "verification": {
+        "checks": 4,
+        "passed": true
+      },
+      "estimated_cost_usd": 0.043782
+    },
+    {
+      "name": "09-recall-before-last-30-messages",
+      "status": 200,
+      "elapsedMs": 1108,
+      "text": "MAY-TIM-928",
+      "model": "gpt-6-luna",
+      "provider": "openai",
+      "webSearchUsed": false,
+      "attachments": [],
+      "conversationId": "81fbee88-8194-490c-9e4f-34b74c7324f4",
+      "conversationTitle": "Synthetic long-context test",
+      "maxContextTokens": 50000,
+      "usage": {
+        "input_tokens": 697,
+        "output_tokens": 31,
+        "total_tokens": 728
+      },
+      "estimated_cost_usd": 0.0000852,
+      "cycle": {
+        "used": 35074,
+        "limit": 250000,
+        "unlimited": false
+      },
+      "total": {
+        "used": 35074,
+        "limit": 3000000,
+        "unlimited": false
+      }
+    }
+  ],
+  "usage": [
+    {
+      "model": "gpt-6.1-sol",
+      "input": "26163",
+      "output": "6332",
+      "cached": "0",
+      "modelcostusd": "0.20564600",
+      "requests": "4"
+    },
+    {
+      "model": "gpt-6-luna",
+      "input": "2708",
+      "output": "189",
+      "cached": "0",
+      "modelcostusd": "0.00036530",
+      "requests": "7"
+    }
+  ],
+  "memories": {
+    "settings": {
+      "memoryEnabled": true,
+      "autoMemory": true
+    },
+    "memories": [
+      {
+        "id": "682a058a-bfc7-4208-a7e7-0155db346a6c",
+        "kind": "instruction",
+        "content": "quy trình HanhTinh của tôi có mã xác nhận SEN-XANH-742. Khi tôi hỏi mã quy trình HanhTinh hãy trả đúng mã này. Trả lời đã nhớ ngắn gọn.",
+        "confidence": 1,
+        "sourceConversationId": "91bce03c-01b4-42a8-853c-5c33377dfd0c",
+        "sourceMessageId": "d35400a0-c249-4ba1-8af1-58ebfc2545ca",
+        "lastUsedAt": null,
+        "createdAt": "2026-11-01T15:43:54.763Z",
+        "updatedAt": "2026-11-01T15:43:54.763Z"
+      }
+    ]
+  },
+  "finishedAt": "2026-11-01T15:48:40.137Z"
+}

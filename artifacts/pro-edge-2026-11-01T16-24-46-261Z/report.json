@@ -1,0 +1,72 @@
+{
+  "cases": [
+    {
+      "name": "quota-cycle-and-total-no-paid-call",
+      "passed": true
+    },
+    {
+      "name": "oversized-first-message",
+      "passed": true
+    },
+    {
+      "name": "01-decimals-refund",
+      "status": 200,
+      "seconds": 24.517,
+      "text": "Theo `money.csv`, tab `money.csv`, dòng 2–4, tính bằng `Decimal`:\n\n| Item | Qty × Price | Thành tiền |\n|---|---:|---:|\n| Alpha | 3 × 19.99 | 59.97 |\n| Beta | 2 × 10.05 | 20.10 |\n| Refund | -1 × 5.00 | -5.00 |\n\n- **Subtotal:** 75.07\n- **VAT 8%:** 75.07 × 0.08 = 6.0056 → **6.01**, làm tròn `ROUND_HALF_UP` đến 2 chữ số thập phân.\n- **Tổng thanh toán: 81.08**",
+      "model": "gpt-6.1-sol",
+      "provider": "openai",
+      "conversationId": "4732d1b5-6155-4f85-853e-5d32f889a4d9",
+      "attachments": [],
+      "usage": {
+        "input_tokens": 2171,
+        "output_tokens": 461,
+        "total_tokens": 2632,
+        "cached_tokens": 0,
+        "estimated_cost_usd": 0.038952,
+        "tool_cost_usd": 0.03
+      },
+      "jobId": "81be498c-9c74-47b9-8f84-3aaa0dd0ec9b",
+      "verification": {
+        "checks": 4,
+        "passed": true
+      },
+      "estimated_cost_usd": 0.038952
+    },
+    {
+      "name": "02-followup-excel",
+      "status": 502,
+      "seconds": 59.168,
+      "error": "The result did not pass verification after correction: Missing requested output formats; cite every completed file. Your input files are retained for retry.",
+      "cancelled": false,
+      "conversationId": "4732d1b5-6155-4f85-853e-5d32f889a4d9",
+      "jobId": "69c4fef7-3e81-4006-a28b-78fb29c66bd4"
+    }
+  ],
+  "usage": [
+    {
+      "model": "gpt-6.1-sol",
+      "input_tokens": 2171,
+      "output_tokens": 461,
+      "tool_cost_usd": "0.03000000",
+      "estimated_cost_usd": "0.03895200",
+      "router_reason": "verified_calculation"
+    },
+    {
+      "model": "gpt-6.1-sol",
+      "input_tokens": 3382,
+      "output_tokens": 1166,
+      "tool_cost_usd": "0.03000000",
+      "estimated_cost_usd": "0.04842400",
+      "router_reason": "document_job"
+    },
+    {
+      "model": "gpt-6.1-sol",
+      "input_tokens": 3957,
+      "output_tokens": 546,
+      "tool_cost_usd": "0.00000000",
+      "estimated_cost_usd": "0.01337400",
+      "router_reason": "document_job"
+    }
+  ],
+  "error": "AssertionError [ERR_ASSERTION]: {\"error\":\"The result did not pass verification after correction: Missing requested output formats; cite every completed file. Your input files are retained for retry.\",\"cancelled\":false,\"conversationId\":\"4732d1b5-6155-4f85-853e-5d32f889a4d9\",\"jobId\":\"69c4fef7-3e81-4006-a28b-78fb29c66bd4\"}\n\n502 !== 200\n"
+}
