@@ -4,7 +4,7 @@ export function needsComputation(prompt: string, hasDocuments = false) {
 }
 export function needsDocumentOutput(prompt: string) {
   prompt = prompt.replace(/không\s+(?:cần\s+)?(?:xuất|tạo|render)\s+(?:file|tệp)|do not\s+(?:create|export|generate)\s+(?:any\s+)?files?/gi, "");
-  return /(chuyển|convert|xuất|export|render|tạo|làm|sửa|chỉnh|cập nhật|modify|edit|generate).{0,70}(file|tệp|pdf|word|docx|excel|xlsx|csv|powerpoint|pptx|báo cáo|report)|(file|tệp).{0,45}(pdf|word|docx|excel|xlsx|csv|powerpoint|pptx)/i.test(prompt);
+  return /(chuyển|convert|xuất|export|render|tạo|làm|sửa|chỉnh|cập nhật|modify|edit|generate|create|make).{0,70}(file|tệp|pdf|word|docx|excel|xlsx|csv|powerpoint|pptx|báo cáo|report)|(file|tệp).{0,45}(pdf|word|docx|excel|xlsx|csv|powerpoint|pptx)/i.test(prompt);
 }
 export function requestedExtensions(prompt: string) {
   // Source formats are not output requirements (e.g. CSV -> four Office files).
