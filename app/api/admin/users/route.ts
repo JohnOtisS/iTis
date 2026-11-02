@@ -29,7 +29,7 @@ const createUserSchema = z.object({
   storageLimitBytes: z.number().int().min(0).max(1024 ** 4).default(2 * 1024 ** 3),
   resetWindowHours: z.number().int().min(1).max(168).optional(),
   aiProvider: z.enum(["openai", "local"]).default("local"),
-  imageProvider: z.enum(["openai", "comfyui", "disabled"]).default("openai"),
+  imageProvider: z.enum(["openai", "comfyui", "disabled"]).default("disabled"),
 });
 
 export async function GET() {
