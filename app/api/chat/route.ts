@@ -302,7 +302,8 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
       conversationId: conversation.id,
     }, { status: 410 });
   }
-  const memoryContext = formatMemoryContext(relevantMemories, user.locale)+(state.memoryNotice?`\nMemory service result (authoritative): ${state.memoryNotice}\nOnly claim a memory was saved when the service confirms it. If clarification is requested, ask it; do not claim that conflicting information was updated.`:"");
+  const memoryCapability = "iTis has private, per-account persistent memory managed by a server service. Only report a successful save when its authoritative result confirms it. Do not claim that cross-chat memory is unavailable. If no save result is present, do not claim anything was saved. A saved reference/preference is not a stored copy of an entire document.";
+  const memoryContext = memoryCapability + "\n" + formatMemoryContext(relevantMemories, user.locale)+(state.memoryNotice?`\nMemory service result (authoritative): ${state.memoryNotice}\nOnly claim a memory was saved when the service confirms it. If clarification is requested, ask it; do not claim that conflicting information was updated.`:"");
   const systemPrompt = (user.locale === "vi" ? `Bạn là iTis, trợ lý AI cao cấp, chính xác, thực tế và hữu ích.
 - Trả lời bằng ngôn ngữ của người dùng; mặc định là tiếng Việt tự nhiên.
 - Đi thẳng vào kết quả, chỉ trả lời đúng phần người dùng yêu cầu. Không mở đầu xã giao, không nhắc lại đề bài và không kết luận dư thừa.
