@@ -3457,7 +3457,6 @@ function AdminView({
               {t("All metrics and settings below are loaded from PostgreSQL.", "Tất cả số liệu và cấu hình bên dưới đều đọc từ PostgreSQL.")}
             </p>
           </div>
-          <CreateUserDialog reload={reload} defaults={settings} />
         </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
@@ -3954,6 +3953,9 @@ function AdminView({
               {t("Unable to load the list. Select “Try again” in the message above.", "Không tải được danh sách. Hãy bấm “Thử lại” ở thông báo phía trên.")}
             </div>
           )}
+          <div className="flex justify-end border-t border-white/8 p-4">
+            <CreateUserDialog reload={reload} defaults={settings} />
+          </div>
         </section>
       </div>
     </main>
@@ -4180,7 +4182,7 @@ function UserDialog({
   member: Member;
   reload: () => Promise<void>;
 }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [name, setName] = useState(member.name);
   const [email, setEmail] = useState(member.email);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -4274,7 +4276,6 @@ function UserDialog({
             {t("Cycle quota and total tokens are independent limits.", "Quota chu kỳ và tổng token là hai giới hạn độc lập.")}
           </DialogDescription>
         </DialogHeader>
-        <AdminResetPassword userId={member.id}/>
         <div className="no-scrollbar grid min-h-0 gap-4 overflow-y-auto py-2 pr-1 md:grid-cols-2">
           <label className="grid gap-2 text-sm">
             {t("Display name", "Tên hiển thị")}
@@ -4417,6 +4418,10 @@ function UserDialog({
             </span>
             <Switch checked={isActive} onCheckedChange={setIsActive} className="data-[state=checked]:bg-primary" />
           </label>
+          <div className="min-w-0 rounded-xl border border-white/8 bg-white/[.02] p-4">
+            <p className="text-sm font-medium">{t("Account security", "Bảo mật tài khoản")}</p>
+            <AdminResetPassword userId={member.id} vi={locale === "vi"}/>
+          </div>
         </div>
         <div className="border-t border-white/8 bg-[#0d1416]/95 pt-4 backdrop-blur">
           {error && <div className="mb-3 text-sm text-red-300">{error}</div>}
@@ -4565,6 +4570,7 @@ function CreateUserDialog({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [imageAccess, setImageAccess] = useState(false);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [role, setRole] = useState<Member["role"]>("standard");
   const [error, setError] = useState("");
@@ -4583,8 +4589,9 @@ function CreateUserDialog({
         password,
         role,
         aiProvider: defaults.aiEnvironment.provider,
-        imageProvider:
-          defaults.aiEnvironment.provider === "local" ? "comfyui" : "openai",
+        imageProvider: imageAccess
+          ? (defaults.aiEnvironment.provider === "local" ? "comfyui" : "openai")
+          : "disabled",
         tokenLimit: plan.cycleTokens,
         unlimited: plan.cycleUnlimited,
         totalTokenLimit: plan.totalTokens,
@@ -4614,15 +4621,16 @@ function CreateUserDialog({
     setEmail("");
     setPassword("");
     setAvatarFile(null);
+    setImageAccess(false);
     await reload();
   }
   return (
-    <div><p role="status" className="mb-2 max-w-sm text-xs text-primary">{emailNotice}</p><Dialog open={open} onOpenChange={setOpen}>
+    <div className="flex flex-col items-end gap-2">{emailNotice && <p role="status" className="max-w-sm text-right text-xs text-primary">{emailNotice}</p>}<Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground">
         <Plus className="size-4" />
         {t("Create account", "Tạo tài khoản")}
       </DialogTrigger>
-      <DialogContent className="border-white/10 bg-[#0d1416]">
+      <DialogContent className="max-h-[90svh] overflow-y-auto border-white/10 bg-[#0d1416]">
         <DialogHeader>
           <DialogTitle>{t("Create iTis account", "Tạo tài khoản iTis")}</DialogTitle>
           <DialogDescription>
@@ -4698,6 +4706,18 @@ function CreateUserDialog({
               </div>
             </div>
           </div>
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-white/[.025] p-3">
+            <input
+              type="checkbox"
+              checked={imageAccess}
+              onChange={(event) => setImageAccess(event.target.checked)}
+              className="mt-0.5 size-4 shrink-0 accent-primary"
+            />
+            <span className="grid gap-1 text-sm">
+              <span className="font-medium">{t("Allow Image Studio access", "Cho phép truy cập Studio ảnh")}</span>
+              <span className="text-xs text-muted-foreground">{t("When disabled, this account cannot see or use Image Studio.", "Khi tắt, tài khoản không thấy menu và không sử dụng được Studio ảnh.")}</span>
+            </span>
+          </label>
           {error && <div className="text-sm text-red-300">{error}</div>}
           <button disabled={busy} className="rounded-xl bg-primary px-4 py-2.5 font-semibold text-primary-foreground">
             {t("Create account", "Tạo tài khoản")}
