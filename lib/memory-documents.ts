@@ -14,7 +14,7 @@ const stop=new Set("the and for with this that from what which please have your 
 export function memoryTerms(userId:string,text:string){
  const key=process.env.MEMORY_ENCRYPTION_KEY||process.env.SESSION_SECRET;if(!key)throw new Error("Memory encryption key required");
  const terms=text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d").toLowerCase().match(/[\p{L}\p{N}_-]{2,}/gu)??[];
- return [...new Set(terms.filter(t=>!stop.has(t)))].slice(0,250).map(t=>createHmac("sha256",key).update(userId+":"+t).digest("hex"));
+ return [...new Set(terms.filter(t=>!stop.has(t)))].slice(0,1000).map(t=>createHmac("sha256",key).update(userId+":"+t).digest("hex"));
 }
 export function documentMemoryRequest(prompt:string){
  const value=prompt.trim();
@@ -42,7 +42,7 @@ export async function rememberDocument(input:{userId:string;name:string;type?:st
  if(sameBinary)return {status:"duplicate",document:sameBinary,overlappingChunks:sameBinary.chunkCount,attachment:attachment(sameBinary)};
  const text=input.extractedText??await extract(bytes,input.name),textHash=digest(canonical(text));
  const chunks:Array<{encryptedText:string;contentHash:string;terms:string[];ordinal:number}>=[];
- for(let offset=0;offset<text.length;offset+=1600){const content=text.slice(offset,offset+1800);chunks.push({encryptedText:encryptMemory(content),contentHash:digest(canonical(content)),terms:memoryTerms(input.userId,content),ordinal:chunks.length});}
+ for(let offset=0;offset<text.length;offset+=1600){const content=text.slice(offset,offset+1800);chunks.push({encryptedText:encryptMemory(content),contentHash:digest(canonical(content)),terms:memoryTerms(input.userId,input.name+" "+content),ordinal:chunks.length});}
  return db.transaction(async tx=>{
   const [owner]=await tx.select().from(users).where(eq(users.id,input.userId)).for("update");if(!owner?.memoryEnabled||!owner.isActive)throw new Error("Personal memory is disabled / Bộ nhớ cá nhân đã bị tắt");
   const [duplicate]=await tx.select().from(memoryDocuments).where(and(eq(memoryDocuments.userId,input.userId),or(eq(memoryDocuments.binaryHash,binaryHash),eq(memoryDocuments.textHash,textHash))));
@@ -75,7 +75,7 @@ export async function uploadRememberedDocument(userId:string,file:File,conversat
 }
 export function documentMemoryNotice(results:DocumentMemoryResult[],vi:boolean){return results.map(r=>r.status==="duplicate"?(vi?`Tệp/nội dung đã có trong bộ nhớ: ${r.document.name}. Không lưu trùng.`:`File/content already remembered: ${r.document.name}. No duplicate saved.`):(vi?`Đã ghi nhớ tài liệu: ${r.document.name} (${r.document.chunkCount} đoạn).`:`Document remembered: ${r.document.name} (${r.document.chunkCount} passages).`)+(r.sameNameDifferentContent?(vi?" Tên giống tài liệu cũ nhưng nội dung khác; đã giữ cả hai bản.":" Same name, different content; both versions retained."):"")+(r.overlappingChunks?(vi?` Có ${r.overlappingChunks} đoạn trùng nội dung đã nhớ.`:` ${r.overlappingChunks} passages match existing content.`):"")).join("\n");}
 export async function retrieveDocumentMemory(userId:string,query:string){
- const terms=memoryTerms(userId,query);if(!terms.length)return {context:"",files:[] as ChatAttachment[]};
+ const terms=memoryTerms(userId,query).slice(0,80);if(!terms.length)return {context:"",files:[] as ChatAttachment[]};
  const array=sql`ARRAY[${sql.join(terms.map(t=>sql`${t}`),sql`, `)}]::text[]`;
  const rows=await getDb().select({chunk:memoryDocumentChunks,doc:memoryDocuments}).from(memoryDocumentChunks).innerJoin(memoryDocuments,eq(memoryDocuments.id,memoryDocumentChunks.documentId)).where(and(eq(memoryDocumentChunks.userId,userId),eq(memoryDocuments.userId,userId),sql`${memoryDocumentChunks.terms} && ${array}`)).orderBy(sql`(select count(*) from unnest(${memoryDocumentChunks.terms}) t where t=ANY(${array})) desc`).limit(12);
  const seen=new Set<string>();const selected=rows.filter(r=>{if(seen.has(r.chunk.contentHash))return false;seen.add(r.chunk.contentHash);return true;}).slice(0,5);
