@@ -1936,7 +1936,7 @@ function ChatView({
 
 function MarkdownMessage({ content }: { content: string }) {
   return (
-    <div className="itis-markdown max-w-none text-[15px] leading-7 text-[#d5deda]">
+    <div className="itis-markdown min-w-0 max-w-none break-words [overflow-wrap:anywhere] text-[15px] leading-7 text-[#d5deda]">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
