@@ -22,13 +22,13 @@ jobs:
           node-version: "22"
           cache: npm
       - name: Apply authorized workspace snapshot
-        if: hashFiles("itis-bootstrap.patch") != ''
+        if: hashFiles('itis-bootstrap.patch') != ''
         run: git apply --index itis-bootstrap.patch
       - run: npm ci --no-audit --no-fund
       - run: npm run lint
       - run: npm run build:local
       - name: Store verified source and start final CI
-        if: hashFiles("itis-bootstrap.patch") != ''
+        if: hashFiles('itis-bootstrap.patch') != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
