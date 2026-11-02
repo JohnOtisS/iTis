@@ -12,7 +12,12 @@ export function getRedis() {
       maxRetriesPerRequest: 1,
       enableOfflineQueue: false,
       lazyConnect: true,
+      connectTimeout: 1000,
+      commandTimeout: 1000,
+      retryStrategy: (attempt) => attempt <= 1 ? 250 : null,
     });
+    // Requests fall back to PostgreSQL; avoid unhandled client error events.
+    globalThis.__itisRedis.on("error", () => {});
   }
   return globalThis.__itisRedis;
 }

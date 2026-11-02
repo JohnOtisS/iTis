@@ -6,6 +6,7 @@ import { userMemories, users } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { decryptMemory } from "@/lib/memory";
 import { consolidateUserMemory } from "@/lib/memory-consolidation";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!user.memoryEnabled) return NextResponse.json({ error: user.locale === "vi" ? "Admin đã tắt bộ nhớ cá nhân cho tài khoản này." : "Personal memory is disabled by your administrator." }, { status: 403 });
+  if(!await enforceRateLimit(user.id,"memory",10))return NextResponse.json({error:user.locale==="vi"?"Bạn cập nhật bộ nhớ quá nhanh. Hãy chờ một phút.":"Too many memory updates. Try again in one minute."},{status:429});
   const parsed = createSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message }, { status: 400 });
   const result = await consolidateUserMemory({userId:user.id,message:parsed.data.content,locale:user.locale,manual:true});
@@ -62,8 +64,10 @@ export async function DELETE() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const result = await getDb().transaction(async tx=>{
-    await tx.select({id:users.id}).from(users).where(eq(users.id,user.id)).for("update");
-    return tx.delete(userMemories).where(eq(userMemories.userId,user.id)).returning({id:userMemories.id});
+    const [owner]=await tx.select().from(users).where(eq(users.id,user.id)).for("update");
+    const deleted=await tx.delete(userMemories).where(eq(userMemories.userId,user.id)).returning({id:userMemories.id});
+    if(owner)await tx.update(users).set({memoryVersion:owner.memoryVersion+1}).where(eq(users.id,user.id));
+    return deleted;
   });
   return NextResponse.json({ deleted: result.length });
 }

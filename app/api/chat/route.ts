@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ne, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { basename, extname } from "node:path";
 import { getDb } from "@/db";
@@ -10,7 +10,7 @@ import { isCodeTask, LOCAL_AI_BASE_URL, LOCAL_AI_CODE_MODEL, LOCAL_AI_GENERAL_MO
 import { formatMemoryContext, inferMemoryCandidate, retrieveUserMemories } from "@/lib/memory";
 import { consolidateUserMemory, isExplicitMemoryRequest, memoryOnlyRequest } from "@/lib/memory-consolidation";
 import { externalSafetyIdentifier } from "@/lib/privacy";
-import { getRedis } from "@/lib/redis";
+import { enforceRateLimit } from "@/lib/rate-limit";
 import { buildChatContext } from "@/lib/chat-context";
 import { documentCatalog, selectDocuments } from "@/lib/chat-documents";
 import { fastWordMode, isDocumentEditFollowup, isImageGeneration, needsComputation, needsDocumentOutput } from "@/lib/chat-task-policy";
@@ -53,18 +53,6 @@ type LocalPayload = {
   choices?: Array<{ message?: { content?: string } }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 };
-
-async function enforceRateLimit(userId: string) {
-  const redis = getRedis();
-  if (!redis) return true;
-  try {
-    if (redis.status === "wait") await redis.connect();
-    const key = `itis:rate:${userId}:${Math.floor(Date.now() / 60_000)}`;
-    const count = await redis.incr(key);
-    if (count === 1) await redis.expire(key, 90);
-    return count <= 30;
-  } catch { return true; }
-}
 
 function makeTitle(prompt: string, locale: "en" | "vi") {
   return prompt.replace(/\s+/g, " ").trim().slice(0, 72) || (locale === "vi" ? "Chat mới" : "New chat");
@@ -146,7 +134,7 @@ export async function POST(request: Request) {
   try {
     const state:{memoryNotice?:string}={};
     const response=await withChatFileCleanup(() => handleChat(request,state));
-    if(state.memoryNotice)response.headers.set("X-Itis-Memory-Notice",encodeURIComponent(state.memoryNotice));
+    if(state.memoryNotice)response.headers.set("X-Itis-Memory-Notice",encodeURIComponent(Array.from(state.memoryNotice).slice(0,700).join("")));
     return response;
   } catch (error) {
     if (isStorageError(error)) return NextResponse.json({ code: "STORAGE_LIMIT", error: STORAGE_ERROR }, { status: 413 });
@@ -276,14 +264,16 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   if (!regenerate) {
     const [savedUserMessage] = await getDb().insert(messages).values({ conversationId: conversation.id, role: "user", content: prompt, tokenCount: estimatedPromptTokens, attachments: inputAttachments }).returning({ id: messages.id });
     sourceMessageId = savedUserMessage?.id ?? null;
-    if (isExplicitMemoryRequest(prompt) || (user.memoryEnabled && user.autoMemory && inferMemoryCandidate(prompt))) {
-      const memory=await consolidateUserMemory({userId:user.id,message:prompt,locale:user.locale,sourceConversationId:conversation.id,sourceMessageId});
+    const [previousMemoryReply]=await getDb().select({role:messages.role,model:messages.model,memoryNotice:messages.memoryNotice}).from(messages).where(and(eq(messages.conversationId,conversation.id),ne(messages.id,sourceMessageId!))).orderBy(desc(messages.createdAt),desc(messages.id)).limit(1);
+    const confirmedFollowup=previousMemoryReply?.role==="assistant"&&previousMemoryReply.model==="iTis Memory"&&previousMemoryReply.memoryNotice==="conflict"&&/^(?:hãy\s+)?(?:thay|đổi|cập nhật|bổ sung|đúng|ok|yes|replace|change|update|add)\b/i.test(prompt);
+    if (confirmedFollowup || isExplicitMemoryRequest(prompt) || (user.memoryEnabled && user.autoMemory && inferMemoryCandidate(prompt))) {
+      const memory=await consolidateUserMemory({userId:user.id,message:prompt,locale:user.locale,sourceConversationId:conversation.id,sourceMessageId,confirmedFollowup});
       state.memoryNotice=memory.notice;
       if(memory.notice)await getDb().update(messages).set({memoryNotice:memory.notice}).where(eq(messages.id,sourceMessageId!));
       if(memory.changed)relevantMemories=await retrieveUserMemories(user.id,prompt,4);
-      if(memoryOnlyRequest(prompt)&&!attachments.length){
+      if((memoryOnlyRequest(prompt)||confirmedFollowup)&&!attachments.length){
         const text=memory.notice||t("No durable information was saved.","Chưa có thông tin dài hạn để lưu.");
-        await getDb().insert(messages).values({conversationId:conversation.id,role:"assistant",content:text,model:"iTis Memory",tokenCount:Math.ceil(text.length/3)});
+        await getDb().insert(messages).values({conversationId:conversation.id,role:"assistant",content:text,model:"iTis Memory",tokenCount:Math.ceil(text.length/3),memoryNotice:memory.status});
         await getDb().update(conversations).set({contextTokens:sql`(select coalesce(sum(token_count),0) from messages where conversation_id=${conversation.id})`,updatedAt:new Date()}).where(eq(conversations.id,conversation.id));
         return NextResponse.json({text,model:"iTis Memory",provider:systemProvider,conversationId:conversation.id,attachments:[],memory,usage:memory.usage??{total_tokens:0}});
       }

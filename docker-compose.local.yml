@@ -8,9 +8,10 @@ services:
     container_name: itis-app
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://itis:itis_local_7F9kQ2mV4pR8@postgres:5432/itis
-      REDIS_URL: redis://:itis_redis_local@redis:6379/0
+      DATABASE_URL: ${ITIS_DOCKER_DATABASE_URL:-postgresql://itis:itis_local_7F9kQ2mV4pR8@postgres:5432/itis}
+      REDIS_URL: redis://:${ITIS_REDIS_PASSWORD:-itis_redis_local}@redis:6379/0
       SESSION_SECRET: ${SESSION_SECRET}
+      MEMORY_ENCRYPTION_KEY: ${MEMORY_ENCRYPTION_KEY:-${SESSION_SECRET}}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       LOCAL_AI_BASE_URL: http://host.docker.internal:1234/v1
       LOCAL_AI_GENERAL_MODEL: qwen/qwen3.5-9b
@@ -18,6 +19,8 @@ services:
       LOCAL_EMBEDDING_MODEL: text-embedding-nomic-embed-text-v1.5
       GENERATED_IMAGES_DIR: /app/storage/generated
       GENERATED_FILES_DIR: /app/storage/files
+      AVATARS_DIR: /app/storage/avatars
+      BRAND_ASSETS_DIR: /app/storage/branding
       COMFYUI_BASE_URL: http://host.docker.internal:8188
       NODE_ENV: production
     extra_hosts:
@@ -27,6 +30,8 @@ services:
     volumes:
       - itis_generated_images:/app/storage/generated
       - itis_generated_files:/app/storage/files
+      - itis_avatars:/app/storage/avatars
+      - itis_branding:/app/storage/branding
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,3 +74,5 @@ volumes:
   itis_redis_data:
   itis_generated_images:
   itis_generated_files:
+  itis_avatars:
+  itis_branding:

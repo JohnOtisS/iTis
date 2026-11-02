@@ -79,39 +79,13 @@ export function inferMemoryCandidate(message: string): { content: string; kind: 
   };
 }
 
-export async function saveUserMemory(input: {
-  userId: string;
-  content: string;
-  kind?: MemoryKind;
-  confidence?: number;
-  sourceConversationId?: string | null;
-  sourceMessageId?: string | null;
-}) {
-  const content = normalize(input.content).slice(0, 2000);
-  if (!content || containsSecret(content)) return null;
-  const embedding = await createLocalEmbedding(content);
-  const [saved] = await getDb().insert(userMemories).values({
-    userId: input.userId,
-    kind: input.kind ?? "knowledge",
-    encryptedContent: encryptMemory(content),
-    contentHash: memoryHash(input.userId, content),
-    embedding,
-    confidence: String(input.confidence ?? 1),
-    sourceConversationId: input.sourceConversationId ?? null,
-    sourceMessageId: input.sourceMessageId ?? null,
-  }).onConflictDoUpdate({
-    target: [userMemories.userId, userMemories.contentHash],
-    set: { active: true, updatedAt: new Date(), embedding },
-  }).returning();
-  return saved;
-}
-
 function keywords(value: string) {
   return new Set(normalize(value).toLocaleLowerCase("vi-VN").split(/[^\p{L}\p{N}]+/u).filter((item) => item.length > 2));
 }
 
 export async function retrieveUserMemories(userId: string, query: string, limit = 4) {
   const embedding = await createLocalEmbedding(query, "query");
+  const semanticScores=new Map<string,number>();
   if (embedding) {
     try {
       const distance = cosineDistance(userMemories.embedding, embedding);
@@ -120,10 +94,7 @@ export async function retrieveUserMemories(userId: string, query: string, limit 
         .where(and(eq(userMemories.userId, userId), eq(userMemories.active, true), isNotNull(userMemories.embedding), sql`${distance} < 0.48`))
         .orderBy(distance)
         .limit(limit);
-      if (rows.length) {
-        await getDb().update(userMemories).set({ lastUsedAt: new Date() }).where(sql`${userMemories.id} in (${sql.join(rows.map((row) => sql`${row.memory.id}`), sql`, `)})`);
-        return rows.map((row) => ({ ...row.memory, content: decryptMemory(row.memory.encryptedContent), score: 1 - Number(row.distance) }));
-      }
+      rows.forEach(row=>semanticScores.set(row.memory.id,1-Number(row.distance)));
     } catch {
       // Existing installations may be waiting for the pgvector migration; use the local fallback below.
     }
@@ -132,12 +103,14 @@ export async function retrieveUserMemories(userId: string, query: string, limit 
     .where(and(eq(userMemories.userId, userId), eq(userMemories.active, true)))
     .orderBy(desc(userMemories.importance), desc(userMemories.updatedAt)).limit(200);
   const queryWords = keywords(query);
-  return rows.map((row) => {
+  const selected=rows.map((row) => {
     const content = decryptMemory(row.encryptedContent);
     const memoryWords = keywords(content);
     const overlap = [...queryWords].filter((word) => memoryWords.has(word)).length;
-    return { ...row, content, score: overlap / Math.max(1, Math.min(queryWords.size, memoryWords.size)) + (row.kind === "profile" || row.kind === "preference" ? 0.2 : 0) };
+    return { ...row, content, score: Math.max(semanticScores.get(row.id)??0,overlap / Math.max(1, Math.min(queryWords.size, memoryWords.size))) + (row.kind === "profile" || row.kind === "preference" ? 0.2 : 0) };
   }).filter((row) => row.score >= 0.18).sort((a, b) => b.score - a.score).slice(0, limit);
+  if(selected.length)await getDb().update(userMemories).set({lastUsedAt:new Date()}).where(and(eq(userMemories.userId,userId),sql`${userMemories.id} in (${sql.join(selected.map(row=>sql`${row.id}`),sql`, `)})`));
+  return selected;
 }
 
 export function formatMemoryContext(memories: Array<{ content: string; kind: string }>, locale: "en" | "vi") {

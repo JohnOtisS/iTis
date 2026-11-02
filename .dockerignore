@@ -6,3 +6,8 @@ dist
 .git
 .env*
 npm-debug.log*
+storage
+artifacts
+backups
+outputs
+work

@@ -31,6 +31,7 @@ export const users = pgTable("users", {
   imageProvider: text("image_provider", { enum: ["openai", "comfyui", "disabled"] }).notNull().default("openai"),
   memoryEnabled: boolean("memory_enabled").notNull().default(true),
   autoMemory: boolean("auto_memory").notNull().default(true),
+  memoryVersion: integer("memory_version").notNull().default(0),
   privacyMode: text("privacy_mode", { enum: ["strict", "balanced"] }).notNull().default("strict"),
   allowOpenAiFiles: boolean("allow_openai_files").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
@@ -166,3 +167,10 @@ export const appSettings = pgTable("app_settings", {
   value: jsonb("value").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const requestRateWindows = pgTable("request_rate_windows", {
+  key: text("key").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id,{onDelete:"cascade"}),
+  hits: integer("hits").notNull().default(1),
+  expiresAt: timestamp("expires_at",{withTimezone:true}).notNull(),
+},table=>[index("request_rate_windows_expires_idx").on(table.expiresAt)]);

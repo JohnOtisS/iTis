@@ -33,17 +33,22 @@ try{
   assert.equal((await patch(a,nameMemory.id,{content:"Tên gọi: Mai."})).status,200);assert.ok((await memories(a)).some(m=>/Mai/.test(m.content)));
   assert.equal((await patch(a,nameMemory.id,{undo:true})).status,200);assert.ok((await memories(a)).some(m=>/Ngọc/.test(m.content)));
   report.cases.push({name:"06-edit-undo-and-account-isolation",passed:true});
+  const pending=await chat("06b-pending-conflict",a,"Hãy ghi nhớ: tên gọi của tôi là Hương.");assert.equal(pending.memory.status,"conflict");
+  const confirmed=await chat("06c-confirm-conflict",a,"Hãy thay thông tin cũ bằng Hương nhé.",pending.conversationId);assert.equal(confirmed.memory.status,"saved");assert.ok((await memories(a)).some(m=>/Hương/.test(m.content)));
+  const history=await (await api(a,`/api/conversations/${first.conversationId}`)).json();assert.ok(history.messages.some(m=>m.memoryNotice));
+  assert.equal((await api(a,`/api/conversations/${first.conversationId}`,{method:"DELETE"})).status,200);
+  assert.equal((await patch(a,nameMemory.id,{undo:true})).status,200);assert.ok((await memories(a)).some(m=>/Ngọc/.test(m.content)));
+  report.cases.push({name:"06d-undo-after-source-chat-deleted",passed:true});
   // An ordinary document request does not trigger memory extraction.
   const beforeUsage=Number((await pool.query("SELECT count(*) n FROM usage_events WHERE user_id=$1 AND router_reason='memory_consolidation'",[a.id])).rows[0].n);
   const ordinary=await chat("07-no-task-pollution",a,"Tôi muốn bạn liệt kê 2 bước chuẩn bị tài liệu. Chỉ trả lời 2 gạch đầu dòng.");assert.ok(ordinary.text);
   const afterUsage=Number((await pool.query("SELECT count(*) n FROM usage_events WHERE user_id=$1 AND router_reason='memory_consolidation'",[a.id])).rows[0].n);assert.equal(afterUsage,beforeUsage);
   await pool.query("UPDATE users SET auto_memory=false WHERE id=$1",[a.id]);
-  const explicit=await chat("08-explicit-with-auto-off",a,"Hãy ghi nhớ: mã quy trình thử nghiệm riêng của tôi là LOTUS-742.");assert.equal(explicit.memory.status,"saved");
+  const explicit=await chat("08-explicit-with-auto-off",a,"Hãy ghi nhớ lâu dài: quy trình duyệt chi phí của tôi có mã LOTUS-742.");assert.equal(explicit.memory.status,"saved");
   await pool.query("UPDATE users SET memory_enabled=false WHERE id=$1",[a.id]);
   const disabled=await chat("09-admin-disabled",a,"Hãy ghi nhớ: tên gọi của tôi là KhôngĐượcLưu.");assert.equal(disabled.memory.status,"skipped");assert.ok(!(await memories(a)).some(m=>/KhôngĐượcLưu/.test(m.content)));
   assert.equal((await patch(a,nameMemory.id,{content:"Blocked"})).status,403);
   await pool.query("UPDATE users SET memory_enabled=true WHERE id=$1",[a.id]);
-  const history=await (await api(a,`/api/conversations/${first.conversationId}`)).json();assert.ok(history.messages.some(m=>m.memoryNotice));
   report.cases.push({name:"10-persisted-notice",passed:true});
 }catch(error){report.error=String(error);process.exitCode=1;console.error(error);}
 finally{

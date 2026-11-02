@@ -92,6 +92,20 @@
       "when": 1793555000000,
       "tag": "0012_memory_consolidation",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793556000000,
+      "tag": "0013_request_rate_windows",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793557000000,
+      "tag": "0014_memory_epoch",
+      "breakpoints": true
     }
   ]
 }

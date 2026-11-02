@@ -23,7 +23,8 @@
     "db:migrate:local": "node --env-file=.env.local ./node_modules/drizzle-kit/bin.cjs migrate",
     "db:seed:local": "node --env-file=.env.local scripts/seed-local.mjs",
     "storage:reconcile": "node --env-file=.env.local scripts/reconcile-storage.mjs",
-    "test:storage": "node --env-file=.env.local scripts/test-storage.mjs"
+    "test:storage": "node --env-file=.env.local scripts/test-storage.mjs",
+    "data:health": "node scripts/data-health.mjs"
   },
   "dependencies": {
     "fflate": "0.8.2",

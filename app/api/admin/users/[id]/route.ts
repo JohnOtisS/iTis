@@ -53,6 +53,7 @@ export async function PATCH(
     ...rest,
     ...(rest.email ? { email: rest.email.toLowerCase() } : {}),
     ...(password ? { passwordHash: await bcrypt.hash(password, 12) } : {}),
+    ...(rest.memoryEnabled!==undefined||rest.autoMemory!==undefined?{memoryVersion:sql`${users.memoryVersion}+1`}:{}),
     updatedAt: new Date(),
   };
   try {

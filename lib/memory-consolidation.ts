@@ -22,16 +22,17 @@ export type MemoryResult={status:"saved"|"unchanged"|"conflict"|"skipped"|"faile
 const words=(s:string)=>new Set(s.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu)??[]);
 export function isExplicitMemoryRequest(s:string){return /(?:hãy |xin )?(?:ghi nhớ|nhớ rằng|nhớ:)|(?:^|[.!]\s*)(?:bro[, ]+)?(?:hãy |xin )?nhớ\s+(?!không|ko)|ghi (?:vào|lại vào) bộ nhớ|lưu (?:vào )?bộ nhớ|từ nay|\b(?:remember|from now on)\b/i.test(s) && !/^(?:đừng|không|do not|don't)\s+(?:ghi\s+)?(?:nhớ|remember)|^(?:do you|can you) remember|(?:có nhớ).*(?:không|\?)/i.test(s);}
 export function memoryOnlyRequest(s:string){return isExplicitMemoryRequest(s)&&/^(?:(?:bro|bạn|please)[,: ]+)?(?:(?:hãy|xin)\s+)?(?:ghi nhớ|nhớ|ghi vào bộ nhớ|lưu (?:vào )?bộ nhớ|từ nay|remember|from now on)/i.test(s.trim())&&!/\?|(?:và|rồi|also|then)\s+(?:hãy\s+)?(?:tạo|viết|phân tích|tính|xuất|create|write|analyze|calculate|export)/i.test(s);}
-export function hasMemoryChangeIntent(message:string){return /đính chính|sai rồi|từ nay|cập nhật|thay (?:đổi|thế)|đổi .{0,100}(?:thành|sang)|không còn|bổ sung|thêm|riêng|kèm|\b(?:correct(?:ion)?|actually|instead|replace|update|from now on|no longer|also|add|include|extend)\b/i.test(message);}
+export function hasMemoryChangeIntent(message:string){return /đính chính|sai rồi|từ nay|cập nhật|thay (?:đổi|thế|bằng|thông tin)|đổi .{0,100}(?:thành|sang)|không còn|bổ sung|thêm|riêng|kèm|\b(?:correct(?:ion)?|actually|instead|replace|update|from now on|no longer|also|add|include|extend)\b/i.test(message);}
 export function memoryRevision(row:Row){return {encryptedContent:row.encryptedContent,contentHash:row.contentHash,kind:row.kind,sourceConversationId:row.sourceConversationId,sourceMessageId:row.sourceMessageId,at:row.updatedAt.toISOString()};}
 export class MemoryConflict extends Error {}
 
 // Model output cannot choose another account's target or overwrite a changed snapshot.
-export async function applyMemoryPlan(input:{userId:string;plan:Plan;snapshots:Row[];sourceConversationId?:string|null;sourceMessageId?:string|null}){
+export async function applyMemoryPlan(input:{userId:string;plan:Plan;snapshots:Row[];sourceConversationId?:string|null;sourceMessageId?:string|null;expectedVersion?:number}){
   const plan=memoryPlanSchema.parse(input.plan);
   return getDb().transaction(async tx=>{
     const [user]=await tx.select().from(users).where(eq(users.id,input.userId)).for("update");
     if(!user?.isActive||!user.memoryEnabled)throw new MemoryConflict("Memory is disabled.");
+    if(input.expectedVersion!==undefined&&user.memoryVersion!==input.expectedVersion)throw new MemoryConflict("Memory changed while processing. Please retry.");
     const rows=await tx.select().from(userMemories).where(eq(userMemories.userId,input.userId));
     const targets=new Set<string>();
     for(const op of plan.operations){
@@ -55,29 +56,32 @@ export async function applyMemoryPlan(input:{userId:string;plan:Plan;snapshots:R
       const hash=memoryHash(input.userId,op.content);
       const existing=rows.find(r=>r.contentHash===hash);
       if(existing?.active)continue;
-      if(rows.filter(r=>r.active).length+changed>=200&&op.action==="add")throw new MemoryConflict("Memory is full. Edit or remove an existing item first.");
+      if(rows.filter(r=>r.active).length>=200&&op.action==="add")throw new MemoryConflict("Memory is full. Edit or remove an existing item first.");
       if(existing&&!existing.active)throw new MemoryConflict("This previously removed memory needs to be added manually again.");
       const prior=rows.find(r=>r.id===op.targetId);
       const values={kind:op.kind,encryptedContent:encryptMemory(op.content),contentHash:hash,embedding:null,confidence:"1",sourceConversationId:input.sourceConversationId??null,sourceMessageId:input.sourceMessageId??null,updatedAt:new Date()};
       if(prior)await tx.update(userMemories).set({...values,revisions:[...prior.revisions,memoryRevision(prior)].slice(-5)}).where(and(eq(userMemories.id,prior.id),eq(userMemories.userId,input.userId)));
       else await tx.insert(userMemories).values({...values,userId:input.userId});
-      rows.push({...values,id:`pending-${changed}`,userId:input.userId,active:true,revisions:[],importance:5,lastUsedAt:null,createdAt:new Date()});
+      if(prior)Object.assign(prior,values);
+      else rows.push({...values,id:`pending-${changed}`,userId:input.userId,active:true,revisions:[],importance:5,lastUsedAt:null,createdAt:new Date()});
       contents.push(op.content);changed++;
     }
+    if(changed)await tx.update(users).set({memoryVersion:user.memoryVersion+1}).where(eq(users.id,input.userId));
     return {changed,questions,contents};
   });
 }
 
-export async function consolidateUserMemory(input:{userId:string;message:string;locale:"en"|"vi";sourceConversationId?:string|null;sourceMessageId?:string|null;manual?:boolean}):Promise<MemoryResult>{
+export async function consolidateUserMemory(input:{userId:string;message:string;locale:"en"|"vi";sourceConversationId?:string|null;sourceMessageId?:string|null;manual?:boolean;confirmedFollowup?:boolean}):Promise<MemoryResult>{
   const vi=input.locale==="vi";
   let extractionUsage:MemoryResult["usage"];
   const result=(status:MemoryResult["status"],notice:string,changed=0,questions:string[]=[]):MemoryResult=>({status,notice,changed,questions,...(extractionUsage?{usage:extractionUsage}:{})});
-  if(!input.manual&&!isExplicitMemoryRequest(input.message)&&!inferMemoryCandidate(input.message))return result("skipped","");
+  if(!input.manual&&!input.confirmedFollowup&&!isExplicitMemoryRequest(input.message)&&!inferMemoryCandidate(input.message))return result("skipped","");
   if(input.message.length>6000)return result("conflict",vi?"Nội dung ghi nhớ quá dài. Hãy chia thành các nhóm ngắn để tránh mất thông tin.":"Please split this long memory request into smaller groups to avoid losing details.");
   if(containsSecret(input.message))return result("failed",vi?"Không ghi nhớ mật khẩu hoặc khóa truy cập.":"Passwords and access keys were not saved.");
   const db=getDb();
   const [user]=await db.select().from(users).where(eq(users.id,input.userId));
-  if(!user?.memoryEnabled||!user.isActive||(!input.manual&&!user.autoMemory&&!isExplicitMemoryRequest(input.message)))return result("skipped",vi?"Bộ nhớ tự động chưa được admin bật.":"Automatic memory is disabled by your administrator.");
+  if(!user?.memoryEnabled||!user.isActive)return result("skipped",vi?"Admin đã tắt bộ nhớ cá nhân cho tài khoản này.":"Personal memory is disabled by your administrator.");
+  if(!input.manual&&!input.confirmedFollowup&&!user.autoMemory&&!isExplicitMemoryRequest(input.message))return result("skipped",vi?"Bộ nhớ tự động chưa được admin bật.":"Automatic memory is disabled by your administrator.");
   const rows=await db.select().from(userMemories).where(and(eq(userMemories.userId,input.userId),eq(userMemories.active,true))).orderBy(desc(userMemories.updatedAt)).limit(200);
   const literal=input.message.replace(/^(?:hãy\s+|xin\s+|please\s+)?(?:ghi nhớ|nhớ(?: rằng)?|remember(?: that)?)\s*[:,-]?\s*/i,"").trim();
   if(rows.some(row=>row.contentHash===memoryHash(input.userId,literal)))return result("unchanged",vi?"Thông tin này đã có trong bộ nhớ; không lưu trùng.":"Already remembered; no duplicate was saved.");
@@ -114,7 +118,7 @@ export async function consolidateUserMemory(input:{userId:string;message:string;
       op.action="conflict";
       op.question=vi?`Bạn muốn thay thông tin đã nhớ bằng “${op.content}” hay bổ sung thông tin này?`:`Should the existing memory be replaced with “${op.content}”, or is this an addition?`;
     }
-    const applied=await applyMemoryPlan({...input,plan,snapshots:selected.map(item=>item.row)});
+    const applied=await applyMemoryPlan({...input,plan,snapshots:selected.map(item=>item.row),expectedVersion:user.memoryVersion});
     if(applied.questions.length)return result("conflict",(vi?"Chưa cập nhật bộ nhớ: ":"Memory unchanged: ")+applied.questions.join(" "),0,applied.questions);
     if(!applied.changed)return result("unchanged",vi?"Không có thông tin mới cần lưu; bộ nhớ được giữ nguyên.":"No new durable information to save; memory unchanged.");
     return result("saved",(vi?"Đã cập nhật bộ nhớ: ":"Memory updated: ")+applied.contents.join("; "),applied.changed);

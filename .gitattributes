@@ -1,0 +1,4 @@
+storage export-ignore
+artifacts export-ignore
+.env* export-ignore
+*.sh text eol=lf

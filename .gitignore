@@ -1,10 +1,8 @@
-<<<<<<< HEAD
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
 /node_modules
 /.pnp
-=======
 # Logs
 logs
 *.log
@@ -136,13 +134,11 @@ dist
 .pnpm-store
 
 # yarn v3
->>>>>>> 8a9a77a142b3011e1e2d57b76751af58c9dd1387
 .pnp.*
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases
-<<<<<<< HEAD
 !.yarn/versions
 
 # testing
@@ -179,7 +175,6 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
-=======
 !.yarn/sdks
 !.yarn/versions
 
@@ -193,4 +188,10 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
->>>>>>> 8a9a77a142b3011e1e2d57b76751af58c9dd1387
+
+# Runtime files and test outputs are data, not application source.
+/storage/
+/backups/
+/artifacts/*
+!/artifacts/*.md
+!.env.example
