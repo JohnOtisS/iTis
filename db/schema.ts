@@ -34,6 +34,7 @@ export const users = pgTable("users", {
   memoryVersion: integer("memory_version").notNull().default(0),
   privacyMode: text("privacy_mode", { enum: ["strict", "balanced"] }).notNull().default("strict"),
   allowOpenAiFiles: boolean("allow_openai_files").notNull().default(false),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -174,3 +175,15 @@ export const requestRateWindows = pgTable("request_rate_windows", {
   hits: integer("hits").notNull().default(1),
   expiresAt: timestamp("expires_at",{withTimezone:true}).notNull(),
 },table=>[index("request_rate_windows_expires_idx").on(table.expiresAt)]);
+
+export const passwordResets = pgTable("password_resets", {
+ id: uuid("id").defaultRandom().primaryKey(), userId: uuid("user_id").notNull().references(()=>users.id,{onDelete:"cascade"}),
+ tokenHash:text("token_hash").notNull().unique(), expiresAt:timestamp("expires_at",{withTimezone:true}).notNull(), usedAt:timestamp("used_at",{withTimezone:true}), createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
+});
+export const authRateWindows = pgTable("auth_rate_windows",{key:text("key").primaryKey(),hits:integer("hits").notNull().default(1),expiresAt:timestamp("expires_at",{withTimezone:true}).notNull()});
+export const notificationCampaigns = pgTable("notification_campaigns",{
+ id:uuid("id").defaultRandom().primaryKey(),createdBy:uuid("created_by").references(()=>users.id,{onDelete:"set null"}),kind:text("kind").notNull(),subject:text("subject").notNull(),body:text("body").notNull(),createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
+});
+export const notificationDeliveries = pgTable("notification_deliveries",{
+ id:uuid("id").defaultRandom().primaryKey(),campaignId:uuid("campaign_id").notNull().references(()=>notificationCampaigns.id,{onDelete:"cascade"}),userId:uuid("user_id").notNull().references(()=>users.id,{onDelete:"cascade"}),recipient:text("recipient").notNull(),status:text("status").notNull().default("queued"),encryptedPayload:text("encrypted_payload"),attempts:integer("attempts").notNull().default(0),nextAttemptAt:timestamp("next_attempt_at",{withTimezone:true}).notNull().defaultNow(),lockedAt:timestamp("locked_at",{withTimezone:true}),providerId:text("provider_id"),error:text("error"),sentAt:timestamp("sent_at",{withTimezone:true}),readAt:timestamp("read_at",{withTimezone:true}),createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
+});

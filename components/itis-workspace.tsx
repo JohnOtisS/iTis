@@ -3,6 +3,8 @@
 /* Native img is intentional for authenticated files, blob previews, and user-uploaded assets. */
 /* eslint-disable @next/next/no-img-element */
 
+import {AccountSecurity,AccountNotifications} from "@/components/account-security";
+import {AdminNotifications,AdminResetPassword} from "@/components/admin-notifications";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
@@ -187,6 +189,7 @@ type UserMemory = {
   updatedAt: string;
 };
 type Member = {
+  lastSeenAt: string | null;
   storageLimitBytes: number;
   storageUsedBytes: number;
   id: string;
@@ -2797,6 +2800,8 @@ function AccountView({
             {t("Manage your personal information, language, and quota in one place.", "Chỉnh sửa thông tin cá nhân, ngôn ngữ và theo dõi toàn bộ quota tại một nơi.")}
           </p>
         </div>
+        <AccountSecurity vi={locale === "vi"}/>
+        <AccountNotifications vi={locale === "vi"}/>
         <section className="mb-7 rounded-3xl border border-white/8 bg-card p-5 md:p-7">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
             {account.user.avatarUrl ? (
@@ -3485,6 +3490,8 @@ function AdminView({
           />
         </div>
 
+        <AdminNotifications vi={account.user.locale === "vi"} members={members}/>
+
         <BrandingEditor
           branding={settings.branding}
           onChange={(branding) => {
@@ -3834,6 +3841,7 @@ function AdminView({
                             <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
                               {member.email}
                             </div>
+                            <p className="mt-1 text-[10px] text-muted-foreground" title={member.lastSeenAt ? new Date(member.lastSeenAt).toLocaleString(numberLocale) : ""}>{member.lastSeenAt ? `${t("Last active", "Hoạt động cuối")}: ${new Date(member.lastSeenAt).toLocaleString(numberLocale)}` : t("Not signed in yet", "Chưa đăng nhập")}</p>
                           </div>
                           <span className="shrink-0 rounded-md bg-white/5 px-2 py-1 text-[10px] capitalize">
                             {member.role}
@@ -4266,6 +4274,7 @@ function UserDialog({
             {t("Cycle quota and total tokens are independent limits.", "Quota chu kỳ và tổng token là hai giới hạn độc lập.")}
           </DialogDescription>
         </DialogHeader>
+        <AdminResetPassword userId={member.id}/>
         <div className="no-scrollbar grid min-h-0 gap-4 overflow-y-auto py-2 pr-1 md:grid-cols-2">
           <label className="grid gap-2 text-sm">
             {t("Display name", "Tên hiển thị")}
@@ -4550,6 +4559,8 @@ function CreateUserDialog({
   defaults: Settings;
 }) {
   const { t } = useLanguage();
+  const [emailNotice,setEmailNotice] = useState("");
+  const [busy,setBusy]=useState(false);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -4559,6 +4570,8 @@ function CreateUserDialog({
   const [error, setError] = useState("");
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if(busy)return;
+    setBusy(true);
     setError("");
     const plan = defaults.roleLimits[role];
     const response = await fetch("/api/admin/users", {
@@ -4582,9 +4595,10 @@ function CreateUserDialog({
     if (!response.ok) {
       const data = (await response.json()) as { error?: string };
       setError(data.error || t("Unable to create account.", "Không thể tạo tài khoản."));
+      setBusy(false);
       return;
     }
-    const created = (await response.json()) as { user: { id: string } };
+    const created = (await response.json()) as { user: { id: string };emailStatus:string };
     if (avatarFile) {
       const form = new FormData();
       form.set("avatar", avatarFile);
@@ -4593,6 +4607,8 @@ function CreateUserDialog({
         body: form,
       });
     }
+    setEmailNotice(t(`Account created · Email: ${created.emailStatus}. See Notifications for delivery status.`,`Đã tạo tài khoản · Email: ${created.emailStatus}. Xem kết quả trong Thông báo.`));
+    setBusy(false);
     setOpen(false);
     setName("");
     setEmail("");
@@ -4601,7 +4617,7 @@ function CreateUserDialog({
     await reload();
   }
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <div><p role="status" className="mb-2 max-w-sm text-xs text-primary">{emailNotice}</p><Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground">
         <Plus className="size-4" />
         {t("Create account", "Tạo tài khoản")}
@@ -4639,7 +4655,7 @@ function CreateUserDialog({
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               type="password"
-              minLength={8}
+              minLength={12}
               required
               className="h-10 rounded-lg border border-white/10 bg-white/[.03] px-3"
             />
@@ -4683,12 +4699,12 @@ function CreateUserDialog({
             </div>
           </div>
           {error && <div className="text-sm text-red-300">{error}</div>}
-          <button className="rounded-xl bg-primary px-4 py-2.5 font-semibold text-primary-foreground">
+          <button disabled={busy} className="rounded-xl bg-primary px-4 py-2.5 font-semibold text-primary-foreground">
             {t("Create account", "Tạo tài khoản")}
           </button>
         </form>
       </DialogContent>
-    </Dialog>
+    </Dialog></div>
   );
 }
 

@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, lt, or, isNull } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getDb } from "@/db";
@@ -65,7 +65,9 @@ export async function getCurrentUser(): Promise<AppUser | null> {
     ))
     .limit(1);
 
-  return rows[0]?.user as AppUser | undefined ?? null;
+  const user = rows[0]?.user as AppUser | undefined;
+  if(user) await getDb().update(users).set({lastSeenAt:new Date()}).where(and(eq(users.id,user.id),or(isNull(users.lastSeenAt),lt(users.lastSeenAt,new Date(Date.now()-60000)))));
+  return user ?? null;
 }
 
 export async function requireCurrentUser(): Promise<AppUser> {

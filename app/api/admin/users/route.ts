@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getDb } from "@/db";
 import { appSettings, usageEvents, users } from "@/db/schema";
 import { requireAdmin } from "@/lib/auth";
+import { emailSettings,enqueueNotification,publicUrl } from "@/lib/notifications";
 import { defaultRoleLimits, normalizeRolePlan } from "@/lib/quota-plans";
 
 export const runtime = "nodejs";
@@ -13,7 +14,8 @@ export const dynamic = "force-dynamic";
 const createUserSchema = z.object({
   email: z.string().email(),
   name: z.string().trim().min(2).max(100),
-  password: z.string().min(8).max(200),
+  password: z.string().min(12).max(200),
+  sendWelcome: z.boolean().default(true),
   role: z.enum(["admin", "plus", "standard"]).default("standard"),
   tokenLimit: z.number().int().min(0).max(1_000_000_000).optional(),
   unlimited: z.boolean().optional(),
@@ -56,6 +58,7 @@ export async function GET() {
       autoMemory: users.autoMemory,
       isActive: users.isActive,
       createdAt: users.createdAt,
+      lastSeenAt: users.lastSeenAt,
       usedTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens} + ${usageEvents.outputTokens}), 0)`,
       costUsd: sql<string>`coalesce(sum(${usageEvents.estimatedCostUsd}), 0)`,
     })
@@ -120,7 +123,9 @@ export async function POST(request: Request) {
         totalTokenLimit: users.totalTokenLimit,
         totalUnlimited: users.totalUnlimited,
       });
-    return NextResponse.json({ user: created }, { status: 201 });
+    let emailStatus="disabled";
+    try{const mail=await emailSettings();if(value.sendWelcome&&mail.welcomeEnabled&&mail.enabled){await enqueueNotification({kind:"welcome",subject:"Welcome to iTis / Chào mừng đến iTis",body:"Your iTis account has been created. Check your email for sign-in details.",privateText:`Welcome to iTis, ${created.name}!\nSign in: ${publicUrl()}/login\nEmail: ${created.email}\nInitial password: ${value.password}\nPlease change this password in Account > Password after signing in.`,recipients:[created]});emailStatus="queued";}}catch{emailStatus="failed";}
+    return NextResponse.json({ user: created,emailStatus }, { status: 201 });
   } catch {
     return NextResponse.json({ error: "Email đã tồn tại." }, { status: 409 });
   }

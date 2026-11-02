@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -134,6 +135,7 @@ export function LoginForm({ systemLogoUrl }: { systemLogoUrl?: string | null }) 
               <div className="login-eyebrow"><Fingerprint className="size-3.5" /> Secure access</div>
               <h2>Welcome back</h2>
               <p>Sign in to continue your private workspace.</p>
+              <Link href="/forgot-password" className="mt-3 inline-block text-sm text-primary">Forgot password?</Link>
             </div>
             <div className="login-fields">
               <label className="login-field">
