@@ -1,3 +1,4 @@
+import {documentMemoryRequest,documentMemoryOnly,documentMemoryNotice,uploadRememberedDocument,rememberDocument,retrieveDocumentMemory,type DocumentMemoryResult} from "@/lib/memory-documents";
 import { and, desc, eq, gte, ne, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { basename, extname } from "node:path";
@@ -171,13 +172,15 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   }
   const prompt = promptValue?.trim();
   if (!prompt) return NextResponse.json({ error: t("Message content is required.", "Thiếu nội dung.") }, { status: 400 });
+  const fileMemoryIntent=documentMemoryRequest(prompt);
+  if(fileMemoryIntent&&!user.memoryEnabled)return NextResponse.json({error:t("Personal memory is disabled by your admin.","Admin đã tắt bộ nhớ cá nhân.")},{status:403});
   if (isImageGeneration(prompt)) return NextResponse.json({code:"USE_IMAGE_STUDIO",error:t("Open Image Studio to generate images. Chat handles documents and analysis.","Hãy mở Studio ảnh để tạo hình. Chat xử lý tài liệu và phân tích."),studioUrl:"/images"},{status:422});
   if (attachments.length > 10) return NextResponse.json({ error: t("You can attach up to 10 files per message.", "Bạn có thể đính kèm tối đa 10 tệp mỗi tin nhắn.") }, { status: 413 });
   if (attachments.some((file) => file.size > 20 * 1024 * 1024)) return NextResponse.json({ error: t("Each attachment is limited to 20MB.", "Mỗi tệp đính kèm tối đa 20MB.") }, { status: 413 });
   const totalAttachmentBytes = attachments.reduce((sum, file) => sum + file.size, 0);
   const storage = await getAccountStorage(user.id);
   // Leave a little room for the answer and message metadata before invoking AI.
-  if (storage.usedBytes + totalAttachmentBytes + Buffer.byteLength(prompt, "utf8") + 65536 > storage.limitBytes) {
+  if (!fileMemoryIntent && storage.usedBytes + totalAttachmentBytes + Buffer.byteLength(prompt, "utf8") + 65536 > storage.limitBytes) {
     return NextResponse.json({ code: "STORAGE_LIMIT", error: STORAGE_ERROR }, { status: 413 });
   }
   if (totalAttachmentBytes > 50 * 1024 * 1024) return NextResponse.json({ error: t("Attachments are limited to 50MB combined.", "Tổng dung lượng tệp đính kèm tối đa 50MB.") }, { status: 413 });
@@ -194,7 +197,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
       error: t("The system is set to OpenAI, but OPENAI_API_KEY is not configured on the server.", "Admin đã chuyển toàn hệ thống sang OpenAI nhưng server chưa có OPENAI_API_KEY."),
     }, { status: 503 });
   }
-  if (systemProvider === "local" && attachments.some((file) => !isTextFile(file))) {
+  if (systemProvider === "local" && !fileMemoryIntent && attachments.some((file) => !isTextFile(file))) {
     return NextResponse.json({
       code: "LOCAL_FILE_UNSUPPORTED",
       error: t("The local model currently reads text, code, CSV, and JSON files directly. Switch the system to OpenAI for PDF, Word, PowerPoint, or Excel files.", "Model Local hiện đọc trực tiếp file text, code, CSV và JSON. Với PDF, Word, PowerPoint hoặc Excel, hãy chuyển công tắc tổng sang OpenAI."),
@@ -252,10 +255,21 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   }
 
   const inputAttachments: ChatAttachment[] = [];
+  const rememberedDocuments:DocumentMemoryResult[]=[];
+  const documentMemoryErrors:string[]=[];
   try {
     for (const { file, bytes } of attachmentData) {
-      inputAttachments.push(await saveChatFile(bytes, file.name, file.type, "input", user.id));
+      if(fileMemoryIntent){
+        try{const result=await uploadRememberedDocument(user.id,file,conversation.id);rememberedDocuments.push(result);inputAttachments.push(result.attachment);}
+        catch(error){documentMemoryErrors.push(`${file.name}: ${error instanceof Error?error.message:"Unable to remember document"}`);if(!documentMemoryOnly(prompt))inputAttachments.push(await saveChatFile(bytes,file.name,file.type,"input",user.id));}
+      }else inputAttachments.push(await saveChatFile(bytes, file.name, file.type, "input", user.id));
     }
+    if(fileMemoryIntent&&!attachments.length){
+      const prior=selectDocuments(await documentCatalog(conversation.id),prompt);
+      for(const file of prior){try{rememberedDocuments.push(await rememberDocument({userId:user.id,name:file.name,type:file.type,fileUrl:file.url,conversationId:conversation.id}));}catch(error){documentMemoryErrors.push(`${file.name}: ${error instanceof Error?error.message:"Unable to remember document"}`);}}
+      if(!prior.length)documentMemoryErrors.push(t("Attach a document to remember, or name one already attached in this chat.","Hãy đính kèm tài liệu cần ghi nhớ, hoặc nêu tên tệp đã gửi trong phiên này."));
+    }
+    if(fileMemoryIntent)state.memoryNotice=[documentMemoryNotice(rememberedDocuments,user.locale==="vi"),...documentMemoryErrors].filter(Boolean).join("\n");
   } catch (error) {
     await Promise.all(inputAttachments.map((file) => deleteChatFile(file.url)));
     throw error;
@@ -264,9 +278,18 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   if (!regenerate) {
     const [savedUserMessage] = await getDb().insert(messages).values({ conversationId: conversation.id, role: "user", content: prompt, tokenCount: estimatedPromptTokens, attachments: inputAttachments }).returning({ id: messages.id });
     sourceMessageId = savedUserMessage?.id ?? null;
+    if(fileMemoryIntent){
+      await getDb().update(messages).set({memoryNotice:state.memoryNotice}).where(eq(messages.id,sourceMessageId!));
+      if(documentMemoryOnly(prompt)){
+        const text=state.memoryNotice||t("No document was remembered.","Chưa ghi nhớ tài liệu nào.");
+        await getDb().insert(messages).values({conversationId:conversation.id,role:"assistant",content:text,model:"iTis Memory",memoryNotice:rememberedDocuments.some(r=>r.status==="saved")?"saved":documentMemoryErrors.length?"failed":"unchanged"});
+        await getDb().update(conversations).set({contextTokens:sql`(select coalesce(sum(token_count),0) from messages where conversation_id=${conversation.id})`,updatedAt:new Date()}).where(eq(conversations.id,conversation.id));
+        return NextResponse.json({text,model:"iTis Memory",provider:systemProvider,conversationId:conversation.id,attachments:[],usage:{total_tokens:0},memory:{status:documentMemoryErrors.length?(rememberedDocuments.length?"partial":"failed"):rememberedDocuments.some(r=>r.status==="saved")?"saved":"unchanged",documents:rememberedDocuments.map(r=>({name:r.document.name,status:r.status}))}});
+      }
+    }
     const [previousMemoryReply]=await getDb().select({role:messages.role,model:messages.model,memoryNotice:messages.memoryNotice}).from(messages).where(and(eq(messages.conversationId,conversation.id),ne(messages.id,sourceMessageId!))).orderBy(desc(messages.createdAt),desc(messages.id)).limit(1);
     const confirmedFollowup=previousMemoryReply?.role==="assistant"&&previousMemoryReply.model==="iTis Memory"&&previousMemoryReply.memoryNotice==="conflict"&&/^(?:hãy\s+)?(?:thay|đổi|cập nhật|bổ sung|đúng|ok|yes|replace|change|update|add)\b/i.test(prompt);
-    if (confirmedFollowup || isExplicitMemoryRequest(prompt) || (user.memoryEnabled && user.autoMemory && inferMemoryCandidate(prompt))) {
+    if (!fileMemoryIntent && (confirmedFollowup || isExplicitMemoryRequest(prompt) || (user.memoryEnabled && user.autoMemory && inferMemoryCandidate(prompt)))) {
       const memory=await consolidateUserMemory({userId:user.id,message:prompt,locale:user.locale,sourceConversationId:conversation.id,sourceMessageId,confirmedFollowup});
       state.memoryNotice=memory.notice;
       if(memory.notice)await getDb().update(messages).set({memoryNotice:memory.notice}).where(eq(messages.id,sourceMessageId!));
@@ -285,7 +308,9 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   }
   const context = await buildChatContext(conversation.id,prompt,maxContextTokens);
   const history = context.history.filter(item => item.role === "user" || item.role === "assistant");
-  const catalog = await documentCatalog(conversation.id);
+  const rememberedContext=user.memoryEnabled?await retrieveDocumentMemory(user.id,prompt):{context:"",files:[] as ChatAttachment[]};
+  const rememberedFileTask=needsDocumentOutput(prompt)||isDocumentEditFollowup(prompt,true)||needsComputation(prompt,true);
+  const catalog = [...await documentCatalog(conversation.id),...(rememberedFileTask?rememberedContext.files:[])];
   const referencesFiles = /file|tệp|tài liệu|dữ liệu|bảng|sheet|cột|dòng|đối chiếu|so sánh|tổng|số liệu|excel|pdf|docx|pptx|csv|xlsx|word|document|data|table|row|column|compare|total|continue|tiếp tục|làm tiếp|sửa|chỉnh|đổi|thay/i.test(prompt) || catalog.some(file=>prompt.toLowerCase().includes(file.name.toLowerCase()));
   const selectedFiles = attachmentData.length ? [...inputAttachments,...selectDocuments(catalog.filter(file=>!inputAttachments.some(input=>input.url===file.url)),prompt).filter(file=>prompt.toLowerCase().includes(file.name.toLowerCase()))] : referencesFiles ? selectDocuments(catalog,prompt) : [];
   const shouldReuseFiles = attachmentData.length === 0 && selectedFiles.length > 0;
@@ -303,7 +328,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
     }, { status: 410 });
   }
   const memoryCapability = "iTis has private, per-account persistent memory managed by a server service. Only report a successful save when its authoritative result confirms it. Do not claim that cross-chat memory is unavailable. If no save result is present, do not claim anything was saved. A saved reference/preference is not a stored copy of an entire document.";
-  const memoryContext = memoryCapability + "\n" + formatMemoryContext(relevantMemories, user.locale)+(state.memoryNotice?`\nMemory service result (authoritative): ${state.memoryNotice}\nOnly claim a memory was saved when the service confirms it. If clarification is requested, ask it; do not claim that conflicting information was updated.`:"");
+  const memoryContext = memoryCapability + "\n" + rememberedContext.context + "\n" + formatMemoryContext(relevantMemories, user.locale)+(state.memoryNotice?`\nMemory service result (authoritative): ${state.memoryNotice}\nOnly claim a memory was saved when the service confirms it. If clarification is requested, ask it; do not claim that conflicting information was updated.`:"");
   const systemPrompt = (user.locale === "vi" ? `Bạn là iTis, trợ lý AI cao cấp, chính xác, thực tế và hữu ích.
 - Trả lời bằng ngôn ngữ của người dùng; mặc định là tiếng Việt tự nhiên.
 - Đi thẳng vào kết quả, chỉ trả lời đúng phần người dùng yêu cầu. Không mở đầu xã giao, không nhắc lại đề bài và không kết luận dư thừa.

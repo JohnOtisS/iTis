@@ -16,9 +16,9 @@ function xmlText(xml: Uint8Array) {
   parser.parse(raw);
   return raw.replace(/<\/(?:w:p|a:p|row|c)>/g, "\n").replace(/<[^>]+>/g, " ").replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/ +/g," ");
 }
-export function inspectDocument(bytes: Uint8Array, name: string) {
+export function inspectDocument(bytes: Uint8Array, name: string, maxCharacters = 60000) {
   const extension = extname(name).toLowerCase();
-  if (textTypes.has(extension)) return new TextDecoder().decode(bytes).slice(0, 60000);
+  if (textTypes.has(extension)) return new TextDecoder().decode(bytes).slice(0, maxCharacters);
   if (![".docx", ".xlsx", ".pptx"].includes(extension)) return null;
   let expanded = 0;
   const zip = unzipSync(bytes, { filter: entry => {
@@ -28,8 +28,8 @@ export function inspectDocument(bytes: Uint8Array, name: string) {
     if (entry.originalSize > 8 * 1024 ** 2 || expanded > 32 * 1024 ** 2) throw new Error("Document is too large to extract safely; use the computation tool.");
     return true;
   } });
-  if (extension === ".xlsx") return spreadsheetText(zip).slice(0, 60000);
-  return Object.entries(zip).map(([path,data]) => `[${path}]\n${xmlText(data)}`).join("\n").slice(0,60000);
+  if (extension === ".xlsx") return spreadsheetText(zip).slice(0, maxCharacters);
+  return Object.entries(zip).map(([path,data]) => `[${path}]\n${xmlText(data)}`).join("\n").slice(0,maxCharacters);
 }
 function spreadsheetText(zip: Record<string, Uint8Array>) {
   const reader = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true, parseTagValue: false, trimValues: false, processEntities: false });

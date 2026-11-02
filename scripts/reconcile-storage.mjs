@@ -9,6 +9,7 @@ try {
     SELECT a->>'url' AS url, c.user_id, 'chat' AS kind FROM messages m
     JOIN conversations c ON c.id=m.conversation_id, LATERAL jsonb_array_elements(m.attachments) a
     WHERE a->>'url' LIKE '/api/files/%'
+    UNION SELECT file_url,user_id,'chat' FROM memory_documents
     UNION SELECT '/api/images/' || id || '/file', user_id, 'image' FROM image_generations WHERE file_name IS NOT NULL
     UNION SELECT split_part(avatar_url,'?',1), id, 'avatar' FROM users WHERE avatar_url LIKE '/api/avatars/%'
   `);

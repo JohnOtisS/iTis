@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 import { getDb } from "@/db";
-import { messages } from "@/db/schema";
+import { memoryDocuments, messages } from "@/db/schema";
 import { sql } from "drizzle-orm";
 import { reserveFile, releaseFile } from "@/lib/account-storage";
 
@@ -95,6 +95,8 @@ export async function deleteChatFile(url: string) {
   const [referenced] = await getDb().select({ id: messages.id }).from(messages)
     .where(sql`${messages.attachments} @> ${JSON.stringify([{ url }])}::jsonb`).limit(1);
   if (referenced) return;
+  const [remembered]=await getDb().select({id:memoryDocuments.id}).from(memoryDocuments).where(sql`${memoryDocuments.fileUrl} = ${url}`).limit(1);
+  if(remembered)return;
   try {
     await unlink(/* turbopackIgnore: true */ join(filesDirectory, id));
   } catch (error) {

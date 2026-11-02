@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
-import { conversations, messages } from "@/db/schema";
+import { conversations, messages, memoryDocuments } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { mimeFromName, readChatFile, type ChatAttachment } from "@/lib/chat-files";
 
@@ -17,7 +17,8 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     .innerJoin(conversations, eq(messages.conversationId, conversations.id))
     .where(and(eq(conversations.userId, user.id), sql`${messages.attachments} @> ${JSON.stringify([{ url }])}::jsonb`))
     .limit(1);
-  const attachment = (row?.attachments as ChatAttachment[] | undefined)?.find((item) => item.url === url);
+  let attachment = (row?.attachments as ChatAttachment[] | undefined)?.find((item) => item.url === url);
+  if(!attachment){const [doc]=await getDb().select().from(memoryDocuments).where(and(eq(memoryDocuments.userId,user.id),eq(memoryDocuments.fileUrl,url))).limit(1);if(doc)attachment={name:doc.name,url,type:doc.mimeType,size:doc.bytes,kind:"input"};}
   if (!attachment) return NextResponse.json({ error: "Không tìm thấy tệp." }, { status: 404 });
   const bytes = await readChatFile(id);
   if (!bytes) return NextResponse.json({ error: "Tệp không còn trên máy chủ." }, { status: 404 });

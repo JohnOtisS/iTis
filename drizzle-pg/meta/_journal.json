@@ -113,6 +113,13 @@
       "when": 1793558000000,
       "tag": "0015_email_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1793559000000,
+      "tag": "0016_memory_documents",
+      "breakpoints": true
     }
   ]
 }

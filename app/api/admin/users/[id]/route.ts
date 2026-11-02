@@ -133,6 +133,7 @@ export async function DELETE(
     }
   }
 
+  const rememberedFiles=await db.execute(sql`select file_url from memory_documents where user_id=${id}`);
   const [attachmentRows, imageRows, usageSummary] = await Promise.all([
     db
       .select({ attachments: messages.attachments })
@@ -166,6 +167,7 @@ export async function DELETE(
 
   await Promise.all([
     deleteAvatarFile(target.avatarUrl),
+    ...rememberedFiles.rows.map(row=>deleteChatFile(String(row.file_url))),
     ...attachmentRows.flatMap((row) =>
       (row.attachments as ChatAttachment[]).map((file) => deleteChatFile(file.url)),
     ),

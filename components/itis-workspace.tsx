@@ -3,6 +3,7 @@
 /* Native img is intentional for authenticated files, blob previews, and user-uploaded assets. */
 /* eslint-disable @next/next/no-img-element */
 
+import {MemoryDocuments} from "@/components/memory-documents";
 import {AccountSecurity,AccountNotifications} from "@/components/account-security";
 import {AdminNotifications,AdminResetPassword} from "@/components/admin-notifications";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -1608,7 +1609,7 @@ function ChatView({
           <div className="mx-auto max-w-3xl space-y-7">
             {messages.map((message, index) =>
               message.role === "user" ? (
-                <div key={message.id ?? index} className="group ml-auto max-w-[82%]">
+                <div key={message.id ?? index} className="group ml-auto min-w-0 max-w-[82%]">
                   {editingMessage?.index === index ? (
                     <div className="rounded-2xl border border-primary/25 bg-[#101918] p-2 shadow-[0_0_24px_rgba(184,255,107,.06)]">
                       <textarea
@@ -2060,7 +2061,7 @@ function MessageAttachments({
   const { t } = useLanguage();
   if (!attachments?.length) return null;
   return (
-    <div className={`grid gap-2 ${compact ? "mt-2" : "mt-3 sm:grid-cols-2"}`}>
+    <div className={`grid w-full min-w-0 max-w-full grid-cols-[minmax(0,1fr)] gap-2 ${compact ? "mt-2" : "mt-3 sm:grid-cols-2"}`}>
       {attachments.map((file, index) => {
         const isImage = file.type?.startsWith("image/") && file.url;
         const canPreview = Boolean(isImage || file.type === "application/pdf");
@@ -2074,7 +2075,7 @@ function MessageAttachments({
                 <FileArchive className="size-4 text-primary" />
               </div>}
               <div className="min-w-0 flex-1">
-                <div className="truncate text-xs font-medium">{file.name}</div>
+                <div title={file.name} className="break-words text-xs font-medium [overflow-wrap:anywhere]">{file.name}</div>
                 <div className="mt-0.5 text-[10px] text-muted-foreground">
                   {formatFileSize(file.size, t)} ·{" "}
                   {file.kind === "output" ? t("Created by iTis", "File iTis tạo") : t("Attachment", "File đính kèm")}
@@ -2090,7 +2091,7 @@ function MessageAttachments({
             key={`${file.url}-${index}`}
             href={file.url}
             {...(canPreview ? { target: "_blank", rel: "noreferrer" } : { download: file.name })}
-            className="block hover:brightness-110"
+            className="block w-full min-w-0 max-w-full overflow-hidden hover:brightness-110"
           >
             {card}
           </a>
@@ -2982,9 +2983,10 @@ function AccountView({
           {memories.length>memoryVisible&&<button onClick={()=>setMemoryVisible(n=>n+12)} className="mt-3 text-xs text-primary">{t("Show more memories","Xem thêm ký ức")}</button>}
           {memories.length > 0 && (
             <button onClick={async () => { await fetch("/api/account/memory", { method: "DELETE" }); await Promise.all([loadMemories(), reload()]); }} className="mt-4 text-xs text-red-300 hover:underline">
-              {t("Forget all personal memory", "Quên toàn bộ bộ nhớ cá nhân")}
+              {t("Forget all text memories", "Quên toàn bộ ghi nhớ dạng chữ")}
             </button>
           )}
+          <MemoryDocuments enabled={account.user.memoryEnabled} vi={locale === "vi"} onChange={reload}/>
         </section>
         <UsageView account={account} embedded />
         {account?.storage && (
