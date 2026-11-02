@@ -2,10 +2,11 @@ name: iTis CI
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
-  contents: write
-  actions: write
+  contents: read
 concurrency:
   group: itis-ci-${{ github.ref }}
   cancel-in-progress: true
@@ -15,27 +16,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: '22'
           cache: npm
-      - name: Apply authorized workspace snapshot
-        if: hashFiles('itis-bootstrap.patch') != ''
-        run: git apply --index --exclude=.github/workflows/ci.yml itis-bootstrap.patch
       - run: npm ci --no-audit --no-fund
       - run: npm run lint
       - run: npm run build:local
-      - name: Store verified source and start final CI
-        if: hashFiles('itis-bootstrap.patch') != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git config user.name "iTis Deploy"
-          git config user.email "deploy@itis.local"
-          git rm itis-bootstrap.patch
-          git add -A
-          git commit -m "Deploy verified iTis workspace and automation"
-          git push origin HEAD:main
-          gh api repos/JohnOtisS/iTis/actions/workflows/ci.yml/dispatches -f ref=main
