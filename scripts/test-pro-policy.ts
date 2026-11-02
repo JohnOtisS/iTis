@@ -5,6 +5,8 @@ import { selectDocuments, versionOutput, inspectDocument, spreadsheetIssues, val
 import { relevantExcerpt } from "../lib/chat-context";
 
 assert.equal(needsDocumentOutput("Tính tổng từ file, không xuất file."),false);
+assert.equal(needsDocumentOutput("Create a short Word DOCX document titled Deployment Check."),true);
+assert.equal(needsDocumentOutput("Calculate totals; do not create any files."),false);
 assert.deepEqual(requestedExtensions("Từ file CSV gốc, tạo XLSX, DOCX, PDF và PPTX."),[".xlsx",".docx",".pptx",".pdf"]);
 assert.deepEqual(requestedExtensions("Chuyển file Word sang PDF."),[".pdf"]);
 assert.deepEqual(requestedExtensions("Từ CSV vừa gửi, đổi Qty của Beta thành 3. Xuất file Excel XLSX có công thức. Nêu tổng, không yêu cầu tải lại CSV."),[".xlsx"]);
