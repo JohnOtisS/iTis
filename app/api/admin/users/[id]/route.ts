@@ -1,12 +1,12 @@
 import bcrypt from "bcryptjs";
 import { basename, join } from "node:path";
 import { unlink } from "node:fs/promises";
-import { eq, sql } from "drizzle-orm";
+import { and, desc, eq, gt, ne, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { conversations, imageGenerations, messages, usageEvents, users } from "@/db/schema";
-import { requireAdmin } from "@/lib/auth";
+import { conversations, imageGenerations, messages, usageEvents, users, sessions } from "@/db/schema";
+import { requireAdmin, currentSessionHash } from "@/lib/auth";
 import { deleteAvatarFile } from "@/lib/avatar-files";
 import { deleteChatFile, type ChatAttachment } from "@/lib/chat-files";
 import { abortImageJob } from "@/lib/image-jobs";
@@ -30,14 +30,16 @@ const updateSchema = z.object({
   memoryEnabled: z.boolean().optional(),
   autoMemory: z.boolean().optional(),
   isActive: z.boolean().optional(),
+  allowMultipleSessions: z.boolean().optional(),
 });
 
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
+  let admin;
   try {
-    await requireAdmin();
+    admin=await requireAdmin();
   } catch {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -57,8 +59,11 @@ export async function PATCH(
     updatedAt: new Date(),
   };
   try {
-    const [updated] = await getDb()
-      .update(users)
+    const keepCurrentHash=admin.id===id?await currentSessionHash():null;
+    const updated=await getDb().transaction(async tx=>{
+      const [owner]=await tx.select({id:users.id}).from(users).where(eq(users.id,id)).for("update");
+      if(!owner)return null;
+      const [updated]=await tx.update(users)
       .set(values)
       .where(eq(users.id, id))
       .returning({
@@ -71,7 +76,16 @@ export async function PATCH(
         totalTokenLimit: users.totalTokenLimit,
         totalUnlimited: users.totalUnlimited,
         isActive: users.isActive,
+        allowMultipleSessions: users.allowMultipleSessions,
       });
+      if(password||rest.isActive===false)await tx.delete(sessions).where(eq(sessions.userId,id));
+      else if(rest.allowMultipleSessions===false){
+        const [current]=keepCurrentHash?await tx.select({id:sessions.id}).from(sessions).where(and(eq(sessions.userId,id),eq(sessions.tokenHash,keepCurrentHash),gt(sessions.expiresAt,new Date()))).limit(1):[];
+        const [latest]=current?[current]:await tx.select({id:sessions.id}).from(sessions).where(and(eq(sessions.userId,id),gt(sessions.expiresAt,new Date()))).orderBy(desc(sessions.createdAt),desc(sessions.id)).limit(1);
+        await tx.delete(sessions).where(and(eq(sessions.userId,id),latest?ne(sessions.id,latest.id):undefined));
+      }
+      return updated;
+    });
     if (!updated)
       return NextResponse.json(
         { error: "Không tìm thấy người dùng." },

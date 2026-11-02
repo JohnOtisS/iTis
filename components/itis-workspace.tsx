@@ -190,6 +190,7 @@ type UserMemory = {
   updatedAt: string;
 };
 type Member = {
+  allowMultipleSessions: boolean;
   lastSeenAt: string | null;
   storageLimitBytes: number;
   storageUsedBytes: number;
@@ -463,6 +464,7 @@ export function ItisWorkspace({
         fetch("/api/account", { cache: "no-store" }),
         fetch("/api/conversations", { cache: "no-store" }),
       ]);
+      if(accountRes.status===401||conversationsRes.status===401){window.location.replace("/login?session=ended");return;}
       if (!accountRes.ok || !conversationsRes.ok)
         throw new Error(t("Unable to load account data.", "Không tải được dữ liệu tài khoản."));
       const nextAccount = (await accountRes.json()) as Account;
@@ -676,7 +678,9 @@ export function ItisWorkspace({
       const response = await fetch("/api/account", { cache: "no-store" }).catch(
         () => null,
       );
-      if (!active || !response?.ok) return;
+      if (!active) return;
+      if(response?.status===401){window.location.replace("/login?session=ended");return;}
+      if (!response?.ok) return;
       const nextAccount = (await response.json()) as Account;
       workspaceCache.account = nextAccount;
       setAccount(nextAccount);
@@ -4198,6 +4202,7 @@ function UserDialog({
   const [storageGiB, setStorageGiB] = useState(String(member.storageLimitBytes / 1024 ** 3));
   const [resetHours, setResetHours] = useState(String(member.resetWindowHours));
   const [isActive, setIsActive] = useState(member.isActive);
+  const [allowMultipleSessions,setAllowMultipleSessions]=useState(member.allowMultipleSessions);
   const [memoryEnabled, setMemoryEnabled] = useState(member.memoryEnabled);
   const [autoMemory, setAutoMemory] = useState(member.autoMemory);
   const [saving, setSaving] = useState(false);
@@ -4213,6 +4218,7 @@ function UserDialog({
     setStorageGiB(String(member.storageLimitBytes / 1024 ** 3));
     setResetHours(String(member.resetWindowHours));
     setIsActive(member.isActive);
+    setAllowMultipleSessions(member.allowMultipleSessions);
     setMemoryEnabled(member.memoryEnabled);
     setAutoMemory(member.autoMemory);
     setAvatarFile(null);
@@ -4232,6 +4238,7 @@ function UserDialog({
       storageLimitBytes: Math.round(Number(storageGiB) * 1024 ** 3),
       resetWindowHours: Number(resetHours),
       isActive,
+      allowMultipleSessions,
       memoryEnabled,
       autoMemory,
     });
@@ -4422,6 +4429,13 @@ function UserDialog({
           </label>
           <div className="min-w-0 rounded-xl border border-white/8 bg-white/[.02] p-4">
             <p className="text-sm font-medium">{t("Account security", "Bảo mật tài khoản")}</p>
+            <label className="mt-3 flex items-start justify-between gap-3 text-sm">
+              <span className="min-w-0">
+                <span className="block">{t("Allow multiple sign-in sessions", "Cho phép nhiều phiên đăng nhập")}</span>
+                <span className="mt-1 block text-xs leading-5 text-muted-foreground">{allowMultipleSessions?t("Keep sessions on different browsers and devices.","Giữ các phiên trên nhiều trình duyệt và thiết bị."):t("New sign-ins revoke the previous session. Saving keeps the newest session (your current session when editing yourself).","Đăng nhập mới sẽ thu hồi phiên cũ. Khi lưu, giữ phiên mới nhất; nếu chỉnh chính mình thì giữ phiên hiện tại.")}</span>
+              </span>
+              <Switch aria-label={t("Allow multiple sign-in sessions", "Cho phép nhiều phiên đăng nhập")} checked={allowMultipleSessions} onCheckedChange={setAllowMultipleSessions} className="shrink-0 data-[state=checked]:bg-primary"/>
+            </label>
             <AdminResetPassword userId={member.id} vi={locale === "vi"}/>
           </div>
         </div>
@@ -4573,6 +4587,7 @@ function CreateUserDialog({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [imageAccess, setImageAccess] = useState(false);
+  const [allowMultipleSessions,setAllowMultipleSessions]=useState(true);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [role, setRole] = useState<Member["role"]>("standard");
   const [error, setError] = useState("");
@@ -4590,6 +4605,7 @@ function CreateUserDialog({
         email,
         password,
         role,
+        allowMultipleSessions,
         aiProvider: defaults.aiEnvironment.provider,
         imageProvider: imageAccess
           ? (defaults.aiEnvironment.provider === "local" ? "comfyui" : "openai")
@@ -4624,6 +4640,7 @@ function CreateUserDialog({
     setPassword("");
     setAvatarFile(null);
     setImageAccess(false);
+    setAllowMultipleSessions(true);
     await reload();
   }
   return (
@@ -4708,6 +4725,10 @@ function CreateUserDialog({
               </div>
             </div>
           </div>
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-white/[.025] p-3">
+            <input type="checkbox" checked={allowMultipleSessions} onChange={event=>setAllowMultipleSessions(event.target.checked)} className="mt-0.5 size-4 shrink-0 accent-primary"/>
+            <span className="grid gap-1 text-sm"><span className="font-medium">{t("Allow multiple sign-in sessions","Cho phép nhiều phiên đăng nhập")}</span><span className="text-xs text-muted-foreground">{t("Turn off to allow one session; a new sign-in ends the previous session.","Tắt để chỉ cho một phiên; đăng nhập mới sẽ đăng xuất phiên cũ.")}</span></span>
+          </label>
           <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-white/[.025] p-3">
             <input
               type="checkbox"

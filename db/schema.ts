@@ -34,6 +34,7 @@ export const users = pgTable("users", {
   memoryVersion: integer("memory_version").notNull().default(0),
   privacyMode: text("privacy_mode", { enum: ["strict", "balanced"] }).notNull().default("strict"),
   allowOpenAiFiles: boolean("allow_openai_files").notNull().default(false),
+  allowMultipleSessions: boolean("allow_multiple_sessions").notNull().default(true),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

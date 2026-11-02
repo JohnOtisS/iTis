@@ -25,6 +25,7 @@ export type AppUser = {
   imageProvider: "openai" | "comfyui" | "disabled";
   memoryEnabled: boolean;
   autoMemory: boolean;
+  allowMultipleSessions: boolean;
 };
 
 function hashToken(token: string) {
@@ -54,6 +55,7 @@ export async function getCurrentUser(): Promise<AppUser | null> {
         imageProvider: users.imageProvider,
         memoryEnabled: users.memoryEnabled,
         autoMemory: users.autoMemory,
+        allowMultipleSessions: users.allowMultipleSessions,
       },
     })
     .from(sessions)
@@ -82,10 +84,23 @@ export async function requireAdmin(): Promise<AppUser> {
   return user;
 }
 
-export async function createSession(userId: string) {
+export async function currentSessionHash() {
+  const token=(await cookies()).get(SESSION_COOKIE)?.value;
+  return token?hashToken(token):null;
+}
+
+export async function createSession(userId: string, expectedPasswordHash?: string) {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
-  await getDb().insert(sessions).values({ userId, tokenHash: hashToken(token), expiresAt });
+  const created=await getDb().transaction(async tx=>{
+    // Serialize logins with policy/password changes, including concurrent logins.
+    const [owner]=await tx.select().from(users).where(eq(users.id,userId)).for("update");
+    if(!owner?.isActive||(expectedPasswordHash&&owner.passwordHash!==expectedPasswordHash))return false;
+    if(!owner.allowMultipleSessions)await tx.delete(sessions).where(eq(sessions.userId,userId));
+    await tx.insert(sessions).values({userId,tokenHash:hashToken(token),expiresAt});
+    return true;
+  });
+  if(!created)return false;
   (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
@@ -93,6 +108,7 @@ export async function createSession(userId: string) {
     path: "/",
     expires: expiresAt,
   });
+  return true;
 }
 
 export async function destroySession() {

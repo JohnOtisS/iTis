@@ -16,6 +16,7 @@ const createUserSchema = z.object({
   name: z.string().trim().min(2).max(100),
   password: z.string().min(12).max(200),
   sendWelcome: z.boolean().default(true),
+  allowMultipleSessions: z.boolean().default(true),
   role: z.enum(["admin", "plus", "standard"]).default("standard"),
   tokenLimit: z.number().int().min(0).max(1_000_000_000).optional(),
   unlimited: z.boolean().optional(),
@@ -59,6 +60,7 @@ export async function GET() {
       isActive: users.isActive,
       createdAt: users.createdAt,
       lastSeenAt: users.lastSeenAt,
+      allowMultipleSessions: users.allowMultipleSessions,
       usedTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens} + ${usageEvents.outputTokens}), 0)`,
       costUsd: sql<string>`coalesce(sum(${usageEvents.estimatedCostUsd}), 0)`,
     })
@@ -104,6 +106,7 @@ export async function POST(request: Request) {
         name: value.name,
         passwordHash,
         role: value.role,
+        allowMultipleSessions: value.allowMultipleSessions,
         tokenLimit: value.tokenLimit ?? plan.cycleTokens,
         unlimited: value.unlimited ?? plan.cycleUnlimited,
         totalTokenLimit: value.totalTokenLimit ?? plan.totalTokens,

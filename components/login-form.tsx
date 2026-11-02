@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Activity,
@@ -18,6 +18,10 @@ import { BrandLogo } from "@/components/itis-logo";
 
 export function LoginForm({ systemLogoUrl }: { systemLogoUrl?: string | null }) {
   const router = useRouter();
+  const [sessionEnded,setSessionEnded]=useState(false);
+  // Read the external navigation reason after hydration.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(()=>{setSessionEnded(new URLSearchParams(window.location.search).get("session")==="ended");},[]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -135,6 +139,7 @@ export function LoginForm({ systemLogoUrl }: { systemLogoUrl?: string | null }) 
               <div className="login-eyebrow"><Fingerprint className="size-3.5" /> Secure access</div>
               <h2>Welcome back</h2>
               <p>Sign in to continue your private workspace.</p>
+              {sessionEnded&&<p role="status" className="mt-3 text-sm text-primary">Your previous session ended. Please sign in again.</p>}
               <Link href="/forgot-password" className="mt-3 inline-block text-sm text-primary">Forgot password?</Link>
             </div>
             <div className="login-fields">

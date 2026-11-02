@@ -22,5 +22,5 @@ export async function POST(request:Request){
  await tx.delete(sessions).where(eq(sessions.userId,user.id));await tx.delete(passwordResets).where(eq(passwordResets.userId,user.id));return true;
  });
  if(!changed)return NextResponse.json({error:"Password changed elsewhere. Please sign in again."},{status:409});
- await createSession(user.id);return NextResponse.json({ok:true});
+ if(!await createSession(user.id,hash))return NextResponse.json({error:"Password changed elsewhere. Please sign in again."},{status:401});return NextResponse.json({ok:true});
 }
