@@ -81,6 +81,7 @@ export const messages = pgTable("messages", {
   model: text("model"),
   tokenCount: integer("token_count").notNull().default(0),
   attachments: jsonb("attachments").$type<Array<{ name: string; url: string; type?: string; size?: number; kind?: "input" | "output" }>>().notNull().default([]),
+  taskUsage: jsonb("task_usage").$type<import("@/lib/task-usage").TaskUsage>(),
   memoryNotice: text("memory_notice"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index("messages_conversation_created_idx").on(table.conversationId, table.createdAt)]);

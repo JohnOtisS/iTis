@@ -23,7 +23,7 @@ export function isImageGeneration(prompt: string) {
 export function fastWordMode(prompt:string,documents:Array<{name:string}>,compute:boolean,web:boolean):"create"|"edit"|null {
   const formats=requestedExtensions(prompt);
   if(!formats.length && documents.length===1 && /\.docx$/i.test(documents[0].name) && /thay|đổi|replace|change|sửa lỗi|chính tả/i.test(prompt))formats.push(".docx");
-  if(compute||web||formats.length!==1||formats[0]!==".docx"||/macro|tracked|track changes|theo dõi thay đổi|chuyển đổi|convert|mẫu gốc|template|logo|hình ảnh/i.test(prompt))return null;
+  if(compute||web||formats.length!==1||formats[0]!==".docx"||/macro|tracked|track changes|theo dõi thay đổi|chuyển đổi|convert|mẫu gốc|template|logo|hình ảnh|Nghị định|NĐ.?30|thể thức|căn lề|font/i.test(prompt))return null;
   if(!documents.length)return "create";
   if(documents.length===1 && /\.docx$/i.test(documents[0].name) && /thay|đổi|replace|change|sửa lỗi|chính tả/i.test(prompt))return "edit";
   return null;

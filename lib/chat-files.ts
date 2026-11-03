@@ -16,6 +16,8 @@ export type ChatAttachment = {
   version?: number;
   family?: string;
   sourceUrls?: string[];
+  sourceMessageId?: string;
+  sourceContentHash?: string;
 };
 
 const filesDirectory = resolve(/* turbopackIgnore: true */ process.env.GENERATED_FILES_DIR || join(process.cwd(), "storage", "files"));

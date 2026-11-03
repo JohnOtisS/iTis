@@ -22,11 +22,12 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   if (!attachment) return NextResponse.json({ error: "Không tìm thấy tệp." }, { status: 404 });
   const bytes = await readChatFile(id);
   if (!bytes) return NextResponse.json({ error: "Tệp không còn trên máy chủ." }, { status: 404 });
-  const safeName = attachment.name.replace(/["\\\r\n]/g, "_");
+  const safeName = attachment.name.normalize("NFD").replace(/\p{M}/gu,"").replace(/đ/g,"d").replace(/Đ/g,"D").replace(/[^\x20-\x7e]|["\\]/g,"_");
+  const encodedName=encodeURIComponent(attachment.name).replace(/[!'()*]/g,c=>"%"+c.charCodeAt(0).toString(16).toUpperCase());
   return new NextResponse(bytes, {
     headers: {
       "Content-Type": attachment.type || mimeFromName(attachment.name),
-      "Content-Disposition": `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(attachment.name)}`,
+      "Content-Disposition": `attachment; filename="${safeName}"; filename*=UTF-8''${encodedName}`,
       "Content-Length": String(bytes.byteLength),
       "Cache-Control": "private, max-age=3600",
     },

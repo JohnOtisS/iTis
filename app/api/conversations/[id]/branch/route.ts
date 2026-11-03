@@ -51,6 +51,7 @@ export async function POST(
       content: message.content,
       model: message.model,
       tokenCount: message.tokenCount,
+      taskUsage: message.taskUsage,
       attachments: await duplicateAttachments(message.attachments as ChatAttachment[], user.id, createdFiles),
       createdAt: message.createdAt,
     });

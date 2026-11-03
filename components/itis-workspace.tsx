@@ -62,6 +62,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Progress } from "@/components/ui/progress";
+import {Popover,PopoverTrigger,PopoverContent} from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -113,6 +114,7 @@ type ChatAttachment = {
   kind?: "input" | "output";
 };
 type Msg = {
+  taskUsage?: Partial<import("@/lib/task-usage").TaskUsage> | null;
   memoryNotice?: string | null;
   id?: string;
   role: "user" | "assistant";
@@ -550,6 +552,15 @@ export function ItisWorkspace({
     }
   }
 
+  async function exportAnswer(messageId:string){
+    if(!conversationId)return;
+    const response=await fetch(`/api/conversations/${conversationId}/export`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sourceMessageId:messageId,format:"docx"})});
+    const result=await response.json() as {error?:string};
+    if(!response.ok)throw new Error(result.error||t("Unable to export answer.","Không thể xuất câu trả lời."));
+    await loadConversation(conversationId,false);
+    void loadData();
+  }
+
   async function loadConversation(id: string, navigate = true) {
     setLoadingConversation(true);
     try {
@@ -565,6 +576,7 @@ export function ItisWorkspace({
           content: string;
           model: string | null;
           tokenCount: number;
+          taskUsage?: Partial<import("@/lib/task-usage").TaskUsage> | null;
           attachments?: ChatAttachment[];
           memoryNotice?: string | null;
           createdAt: string;
@@ -584,7 +596,8 @@ export function ItisWorkspace({
               item.role === "assistant"
                 ? shortModelLabel(item.model)
                 : undefined,
-            tokens: item.tokenCount,
+            tokens: item.taskUsage?.total_tokens??item.tokenCount,
+            taskUsage:item.taskUsage,
             attachments: item.attachments ?? [],
             memoryNotice: item.memoryNotice,
             createdAt: item.createdAt,
@@ -868,7 +881,8 @@ export function ItisWorkspace({
               error?: string;
               model?: string;
               conversationId?: string;
-              usage?: { total_tokens?: number };
+              usage?: Partial<import("@/lib/task-usage").TaskUsage>;
+              messageId?:string;
             };
             if (event.jobId) activeJobRef.current=event.jobId;
             if (event.type === "meta" && event.model) setMessages(current=>current.map(item=>item.id===temporaryId?{...item,model:shortModelLabel(event.model)}:item));
@@ -887,7 +901,9 @@ export function ItisWorkspace({
               setMessages((current) => current.map((item) => item.id === temporaryId
                 ? {
                     ...item,
-                    content: event.text || item.content,
+                    id:event.messageId??item.id,
+                    content: event.text ?? item.content,
+                    taskUsage:event.usage,
                     model: shortModelLabel(event.model),
                     tokens: event.usage?.total_tokens ?? item.tokens,
                     attachments: event.attachments ?? item.attachments,
@@ -910,7 +926,8 @@ export function ItisWorkspace({
         error?: string;
         code?: string;
         conversationId?: string;
-        usage?: { total_tokens?: number };
+        usage?: Partial<import("@/lib/task-usage").TaskUsage>;
+              messageId?:string;
         model?: string;
         provider?: "openai" | "local";
         attachments?: ChatAttachment[];
@@ -937,8 +954,10 @@ export function ItisWorkspace({
         {
           role: "assistant",
           model: shortModelLabel(data.model),
+          id:data.messageId,
+          taskUsage:data.usage,
           tokens: data.usage?.total_tokens ?? 0,
-          content: data.text || t("iTis did not receive a response.", "iTis chưa nhận được nội dung trả lời."),
+          content: data.text ?? t("iTis did not receive a response.", "iTis chưa nhận được nội dung trả lời."),
           attachments: data.attachments ?? [],
           createdAt: new Date().toISOString(),
         },
@@ -1279,6 +1298,7 @@ export function ItisWorkspace({
             taskStage={taskStage}
             retryTask={retryableTask && retryableTask.conversationId===conversationId ? ()=>void send(retryableTask.prompt,{displayUser:false,regenerate:true,conversationIdOverride:retryableTask.conversationId,ignoreAttachment:true}) : undefined}
             stopGenerating={stopGenerating}
+            exportAnswer={exportAnswer}
             branchFromMessage={branchFromMessage}
             truncateMessages={(index) => setMessages((current) => current.slice(0, index))}
             selectedModel={selectedModel}
@@ -1378,6 +1398,7 @@ function ChatView({
   retryTask,
   stopGenerating,
   branchFromMessage,
+  exportAnswer,
   truncateMessages,
   selectedModel,
   webSearchEnabled,
@@ -1397,6 +1418,7 @@ function ChatView({
   taskStage: string;
   retryTask?: () => void;
   stopGenerating: () => void;
+  exportAnswer: (messageId:string)=>Promise<void>;
   branchFromMessage: (messageId: string, messageIndex: number, content: string) => Promise<void>;
   truncateMessages: (index: number) => void;
   selectedModel: string;
@@ -1409,6 +1431,7 @@ function ChatView({
   chatLogoUrl: string | null;
 }) {
   const { t, numberLocale, locale } = useLanguage();
+  const [exportingAnswer,setExportingAnswer]=useState<string|null>(null);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [composerExpanded, setComposerExpanded] = useState(false);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -1688,7 +1711,7 @@ function ChatView({
                 <div key={message.id ?? index} className="group flex gap-3">
                   <BrandLogo src={chatLogoUrl} size={30} className="mt-0.5 shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+                    <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <span className="font-semibold text-[#d7e1de]">iTis</span>
                       {message.model && (
                         <>
@@ -1697,9 +1720,22 @@ function ChatView({
                         </>
                       )}
                       {message.tokens !== undefined && !(sending && message.id?.startsWith("stream-") && message.tokens === 0) && (
-                        <span>
-                          {message.tokens.toLocaleString(numberLocale)} {t("tokens processed", "token xử lý")}
-                        </span>
+                        message.taskUsage ? <Popover>
+                          <PopoverTrigger asChild><button type="button" className="cursor-pointer select-none hover:text-foreground" aria-label={t("Token and cost details","Chi tiết token và chi phí")}>{message.taskUsage.usage_complete===false?"≈ ":""}{message.tokens.toLocaleString(numberLocale)} {t("total tokens", "token tổng")}</button></PopoverTrigger>
+                          <PopoverContent align="start" collisionPadding={12} className="max-h-[var(--radix-popover-content-available-height)] max-w-[calc(100vw-24px)] overflow-y-auto rounded-xl p-3 text-xs">
+                            <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2">
+                              <dt>{t("Input", "Đầu vào")}</dt><dd>{(message.taskUsage.input_tokens??0).toLocaleString(numberLocale)}</dd>
+                              <dt>{t("Output", "Đầu ra")}</dt><dd>{(message.taskUsage.output_tokens??0).toLocaleString(numberLocale)}</dd>
+                              <dt>{t("Reasoning · included in output", "Suy luận · đã nằm trong đầu ra")}</dt><dd>{message.taskUsage.reasoning_tokens?.toLocaleString(numberLocale)??"—"}</dd>
+                              <dt>{t("Cached input", "Đầu vào đọc từ cache")}</dt><dd>{(message.taskUsage.cached_tokens??0).toLocaleString(numberLocale)}</dd>
+                              <dt>{t("Cache writes", "Ghi cache")}</dt><dd>{message.taskUsage.cache_write_tokens?.toLocaleString(numberLocale)??"—"}</dd>
+                              <dt>{t("AI calls", "Lượt gọi AI")}</dt><dd>{message.taskUsage.calls??"—"}</dd>
+                              <dt>{t("Estimated tools", "Phí công cụ ước tính")}</dt><dd>${(message.taskUsage.tool_cost_usd??0).toFixed(4)}</dd>
+                              <dt>{t("Estimated total cost", "Tổng phí ước tính")}</dt><dd>${(message.taskUsage.estimated_cost_usd??0).toFixed(5)}</dd>
+                            </dl>
+                            {message.taskUsage.usage_complete===false&&<p className="mt-2 text-amber-400">{t("Provider usage is incomplete; this is not a final billing total.","Chưa nhận đủ usage từ nhà cung cấp; đây chưa phải số liệu thanh toán cuối cùng.")}</p>}
+                          </PopoverContent>
+                        </Popover> : <span>{message.tokens.toLocaleString(numberLocale)} {t("output tokens · historical", "token đầu ra · lịch sử")}</span>
                       )}
                       {message.createdAt && (
                         <>
@@ -1726,7 +1762,11 @@ function ChatView({
                         >
                           {copiedMessageKey === (message.id ?? `assistant-${index}`) ? <Check className="size-4 text-primary" /> : <Copy className="size-4" />}
                         </button>
-                        {index === messages.length - 1 && !sending && (
+                        {message.id&&!message.attachments?.length&&!message.id.startsWith("stream-")&&<button type="button" disabled={sending||Boolean(exportingAnswer)} onClick={async()=>{
+                          setExportingAnswer(message.id!);setAttachmentError("");
+                          try{await exportAnswer(message.id!);}catch(error){setAttachmentError(error instanceof Error?error.message:t("Export failed.","Xuất file thất bại."));}finally{setExportingAnswer(null);}
+                        }} title={t("Export this exact answer as Word · no AI tokens","Xuất đúng câu trả lời này ra Word · không dùng token AI")} aria-label={t("Export Word","Xuất Word")} className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:bg-white/5 hover:text-foreground disabled:opacity-40">{exportingAnswer===message.id?<LoaderCircle className="size-4 animate-spin"/>:<Download className="size-4"/>}Word</button>}
+                        {index === messages.length - 1 && !sending && message.model!=="iTis Files" && (
                           <button
                             type="button"
                             onClick={() => regenerateAnswer(index)}

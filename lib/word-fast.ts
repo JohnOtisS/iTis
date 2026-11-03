@@ -14,8 +14,8 @@ export const wordEditFormat={type:"json_schema",name:"word_edit",strict:true,sch
 function paragraph(text:string,style="Normal") {
   return `<w:p><w:pPr><w:pStyle w:val="${style}"/></w:pPr><w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
 }
-export function buildWord(draft:z.infer<typeof wordDraftSchema>) {
-  let body=paragraph(draft.title,"Title");
+export function buildWord(draft:z.infer<typeof wordDraftSchema>, includeTitle=true) {
+  let body=includeTitle?paragraph(draft.title,"Title"):"";
   for(const block of draft.blocks){
     if(block.type==="table"){
       if(!block.rows.length||block.rows.some(row=>!row.length||row.length>10))throw new Error("Invalid document table.");

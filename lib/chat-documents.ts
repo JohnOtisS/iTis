@@ -1,3 +1,5 @@
+import {documentKind} from "@/lib/artifact-policy";
+import {extractText,getDocumentProxy} from "unpdf";
 import { createHash } from "node:crypto";
 import { extname } from "node:path";
 import { unzipSync } from "fflate";
@@ -101,6 +103,8 @@ export function selectDocuments(catalog: ChatAttachment[], prompt: string) {
   const extensions = ["xlsx","docx","pptx","pdf","csv"].filter(ext => lower.includes(ext) || (ext === "xlsx" && /excel/.test(lower)) || (ext === "docx" && /word/.test(lower)));
   const named = catalog.filter(file => lower.includes(file.name.toLowerCase()) || lower.includes(file.name.toLowerCase().replace(/\.[^.]+$/, "")));
   let candidates = named.length ? named : /\b(original|source)\b|file gốc|tệp gốc/i.test(prompt) ? catalog.filter(file => file.kind === "input") : catalog;
+  const kind=documentKind(prompt);
+  if(!named.length&&kind)candidates=candidates.filter(file=>documentKind(file.name)===kind);
   const requestedVersions = [...prompt.matchAll(/\bv(?:ersion)?\s*(\d+)|bản\s+(\d+)/gi)].map(match=>Number(match[1]??match[2]));
   if (requestedVersions.length) candidates = candidates.filter(file => requestedVersions.includes(file.version ?? 1));
   if (!named.length && extensions.length) {
@@ -129,7 +133,12 @@ export async function prepareDocument(file: ChatAttachment, userId: string, quer
   const hash = record.contentHash ?? createHash("sha256").update(bytes).digest("hex");
   let extracted = record.extractedText;
   if (extracted === null || (/\.xlsx$/i.test(file.name) && !extracted.startsWith("[sheet:"))) {
-    try { extracted = inspectDocument(bytes,file.name); } catch { extracted = null; }
+    try {
+      if(/\.pdf$/i.test(file.name)){
+        const pdf=await getDocumentProxy(new Uint8Array(bytes),{useSystemFonts:false,useWorkerFetch:false});
+        try{if(pdf.numPages>500)throw new Error("PDF exceeds extraction budget");extracted=(await extractText(pdf,{mergePages:true})).text.slice(0,60000);}finally{await pdf.loadingTask.destroy();}
+      }else extracted = inspectDocument(bytes,file.name);
+    } catch { extracted = null; }
     await getDb().update(storedFiles).set({contentHash:hash,extractedText:extracted}).where(eq(storedFiles.url,file.url));
   }
   return { file, bytes: new Uint8Array(bytes), excerpt: extracted ? relevantExcerpt(extracted,query,5000) : null, cached: record.extractedText !== null, providerFileId: record.providerFileId, providerExpiresAt: record.providerExpiresAt };

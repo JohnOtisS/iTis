@@ -1,3 +1,6 @@
+import {localArtifactAction} from "@/lib/local-artifacts";
+import {localArtifactIntent} from "@/lib/artifact-policy";
+import {taskUsage,estimateModelCost,terminalProviderUsage} from "@/lib/task-usage";
 import {documentMemoryRequest,documentMemoryOnly,documentMemoryNotice,uploadRememberedDocument,rememberDocument,retrieveDocumentMemory,type DocumentMemoryResult} from "@/lib/memory-documents";
 import { and, desc, eq, gte, ne, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -45,7 +48,7 @@ type OpenAiPayload = {
   }>;
   usage?: {
     input_tokens?: number; output_tokens?: number; total_tokens?: number;
-    input_tokens_details?: { cached_tokens?: number };
+    input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
     output_tokens_details?: { reasoning_tokens?: number };
   };
 };
@@ -177,6 +180,17 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   if (isImageGeneration(prompt)) return NextResponse.json({code:"USE_IMAGE_STUDIO",error:t("Open Image Studio to generate images. Chat handles documents and analysis.","Hãy mở Studio ảnh để tạo hình. Chat xử lý tài liệu và phân tích."),studioUrl:"/images"},{status:422});
   if (attachments.length > 10) return NextResponse.json({ error: t("You can attach up to 10 files per message.", "Bạn có thể đính kèm tối đa 10 tệp mỗi tin nhắn.") }, { status: 413 });
   if (attachments.some((file) => file.size > 20 * 1024 * 1024)) return NextResponse.json({ error: t("Each attachment is limited to 20MB.", "Mỗi tệp đính kèm tối đa 20MB.") }, { status: 413 });
+  // File delivery/export is deterministic and does not require an API key or AI quota.
+  if(!attachments.length && !regenerate && localArtifactIntent(prompt)){
+    if(!conversationId){const [created]=await getDb().insert(conversations).values({userId:user.id,title:makeTitle(prompt,user.locale)}).returning();conversationId=created.id;}
+    try{return NextResponse.json(await localArtifactAction({userId:user.id,conversationId,prompt,locale:user.locale}));}
+    catch(error){
+      if(isStorageError(error))throw error;
+      if(error instanceof Error&&error.message==="ARTIFACT_BUSY")return NextResponse.json({error:"Another file export is running in this chat. Please retry shortly."},{status:409});
+      const missing=error instanceof Error&&error.message==="ARTIFACT_SOURCE_NOT_FOUND";
+      return NextResponse.json({error:missing?t("Conversation not found.","Không tìm thấy phiên chat."):t("The saved source is unavailable or too large to export. Select another answer or file.","Nguồn đã lưu không còn hoặc vượt kích thước xuất hỗ trợ. Hãy chọn câu trả lời hoặc tệp khác.")},{status:missing?404:422});
+    }
+  }
   const totalAttachmentBytes = attachments.reduce((sum, file) => sum + file.size, 0);
   const storage = await getAccountStorage(user.id);
   // Leave a little room for the answer and message metadata before invoking AI.
@@ -306,7 +320,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
     const [source]=await getDb().select({id:messages.id}).from(messages).where(and(eq(messages.conversationId,conversation.id),eq(messages.role,"user"))).orderBy(desc(messages.createdAt)).limit(1);
     sourceMessageId=source?.id??null;
   }
-  const context = await buildChatContext(conversation.id,prompt,maxContextTokens);
+  const context = await buildChatContext(conversation.id,prompt,maxContextTokens,{compact:needsDocumentOutput(prompt)||attachments.length>0||needsComputation(prompt,true)});
   const history = context.history.filter(item => item.role === "user" || item.role === "assistant");
   const rememberedContext=user.memoryEnabled?await retrieveDocumentMemory(user.id,prompt):{context:"",files:[] as ChatAttachment[]};
   const rememberedFileTask=needsDocumentOutput(prompt)||isDocumentEditFollowup(prompt,true)||needsComputation(prompt,true);
@@ -350,7 +364,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
 - Keep Markdown compact; use lists and tables only when they improve readability.`) + (memoryContext ? `\n\n${memoryContext}\n- Never reveal that another user has memories. Treat these memories as belonging only to the signed-in user.` : "");
 
   const artifactTask = needsDocumentOutput(prompt) || isDocumentEditFollowup(prompt,selectedFiles.length>0);
-  const computationTask = needsComputation(prompt, selectedFiles.length>0) || (selectedFiles.some(file=>/\.(csv|xlsx|xls)$/i.test(file.name)) && /phân tích|analy|dữ liệu|data/i.test(prompt));
+  const computationTask = (selectedFiles.length>0 && /toàn bộ|tất cả|đầy đủ|full review|every (?:row|sheet|page)|exhaustive/i.test(prompt)) || needsComputation(prompt, selectedFiles.length>0) || (selectedFiles.some(file=>/\.(csv|xlsx|xls)$/i.test(file.name)) && /phân tích|analy|dữ liệu|data/i.test(prompt));
   const simpleWord=fastWordMode(prompt,selectedFiles,computationTask,webSearchTask);
   if (systemProvider === "openai" && (artifactTask || computationTask || selectedFiles.length>0 || webSearchTask)) {
     return startChatJob({userId:user.id,conversationId:conversation.id,sourceMessageId,prompt,systemPrompt:`${systemPrompt}\n\n${context.contextNote}`,history:history.map(({role,content})=>({role,content})),documents:selectedFiles,catalog,artifact:artifactTask,compute:computationTask,webSearch:webSearchTask,model:(!routerEnabled||(!simpleWord&&(artifactTask||computationTask||isComplexTask(prompt))))?"gpt-6.1-sol":"gpt-6-luna",locale:user.locale},Boolean(request.headers.get("accept")?.includes("application/x-ndjson")),request.signal);
@@ -379,6 +393,10 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
           let output = 0;
           let cached = 0;
           let reasoning = 0;
+          let cacheWrite=0;
+          let usageAvailable=false;
+          let messageId:string|undefined;
+          let usageRecorded=false;
           let requestId: string | null = null;
           let estimatedCostUsd = 0;
           let completed = false;
@@ -409,6 +427,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
                 if (delta) { text += delta; emit({ type: "delta", delta }); }
                 const usage = event.usage as LocalPayload["usage"] | undefined;
                 if (usage) {
+                  usageAvailable=true;
                   input = usage.prompt_tokens ?? input;
                   output = usage.completion_tokens ?? output;
                 }
@@ -444,7 +463,8 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
                   const delta = typeof event.delta === "string" ? event.delta : "";
                   if (delta) { text += delta; emit({ type: "delta", delta }); }
                 }
-                if (event.type === "response.completed") {
+                const terminal=terminalProviderUsage(event);
+                if (terminal) {
                   const payload = event.response as OpenAiPayload | undefined;
                   const finalText = payload?.output_text ?? payload?.output?.flatMap((item) => item.content ?? [])
                     .filter((item) => item.type === "output_text").map((item) => item.text ?? "").join("\n") ?? "";
@@ -453,58 +473,67 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
                   cached = payload?.usage?.input_tokens_details?.cached_tokens ?? cached;
                   output = payload?.usage?.output_tokens ?? output;
                   reasoning = payload?.usage?.output_tokens_details?.reasoning_tokens ?? reasoning;
-                  completed = true;
+                  cacheWrite=payload?.usage?.input_tokens_details?.cache_write_tokens??0;
+                  usageAvailable=Boolean(payload?.usage);
+                  completed = terminal.completed;
                 }
+                if (event.type === "response.incomplete")throw new Error("OUTPUT_LIMIT");
                 if (event.type === "response.failed" || event.type === "error") {
                   throw new Error(String(event.message ?? "OpenAI stream failed."));
                 }
               });
               output ||= Math.ceil(text.length / 3);
-              const prices = model === "gpt-6.1-sol" ? { input: 2, cached: 0.1, output: 10 } : { input: 0.1, cached: 0.01, output: 0.5 };
-              estimatedCostUsd = ((input - cached) * prices.input + cached * prices.cached + output * prices.output) / 1_000_000;
+              estimatedCostUsd=estimateModelCost(model,{input_tokens:input,output_tokens:output,input_tokens_details:{cached_tokens:cached,cache_write_tokens:cacheWrite}});
             }
 
             if (text.trim()) {
               await getDb().transaction(async (tx) => {
-                await tx.insert(messages).values({ conversationId: conversation.id, role: "assistant", content: text.trim(), model, tokenCount: output, attachments: [] });
+                const [answer]=await tx.insert(messages).values({ conversationId: conversation.id, role: "assistant", content: text.trim(), model, tokenCount: output, taskUsage:taskUsage({input_tokens:input,output_tokens:output,input_tokens_details:{cached_tokens:cached,cache_write_tokens:cacheWrite},output_tokens_details:{reasoning_tokens:reasoning}},{estimated_cost_usd:estimatedCostUsd,usage_complete:usageAvailable}), attachments: [] }).returning({id:messages.id});messageId=answer.id;
                 await tx.insert(usageEvents).values({
                   userId: user.id, conversationId: conversation.id, requestId, model,
                   inputTokens: input, cachedTokens: cached, reasoningTokens: reasoning, outputTokens: output,
-                  estimatedCostUsd: estimatedCostUsd.toFixed(8), routerReason: completed ? routerReason : `${routerReason}_stopped`,
+                  toolDetails:{usageAvailable,cacheWriteTokens:cacheWrite},estimatedCostUsd: estimatedCostUsd.toFixed(8), routerReason: completed ? routerReason : `${routerReason}_stopped`,
                 });
                 await tx.update(conversations).set({ contextTokens: sql`(select coalesce(sum(chat_messages.token_count), 0) from ${messages} chat_messages where chat_messages.conversation_id = ${conversation.id})`, updatedAt: new Date() }).where(eq(conversations.id, conversation.id));
-              });
+              });usageRecorded=true;
             }
             emit({
-              type: "done", text: text.trim(), model, provider: systemProvider,
+              type: "done", text: text.trim(), messageId, model, provider: systemProvider,
               conversationId: conversation.id, conversationTitle: conversation.title,
-              usage: { input_tokens: input, output_tokens: output, total_tokens: input + output },
+              usage: taskUsage({input_tokens:input,output_tokens:output,input_tokens_details:{cached_tokens:cached,cache_write_tokens:cacheWrite},output_tokens_details:{reasoning_tokens:reasoning}},{estimated_cost_usd:estimatedCostUsd,usage_complete:usageAvailable}),
               estimated_cost_usd: estimatedCostUsd, stopped: !completed,
               cycle: { used: usedTokens + input + output, limit: user.tokenLimit, unlimited: user.unlimited },
               total: { used: lifetimeUsedTokens + input + output, limit: user.totalTokenLimit, unlimited: user.totalUnlimited },
             });
           } catch (error) {
             if (abortController.signal.aborted) {
+              estimatedCostUsd=systemProvider==="openai"?estimateModelCost(model,{input_tokens:input,output_tokens:output,input_tokens_details:{cached_tokens:cached,cache_write_tokens:cacheWrite}}):0;
               if (text.trim()) {
                 output ||= Math.ceil(text.length / 3);
                 await getDb().transaction(async (tx) => {
-                  await tx.insert(messages).values({ conversationId: conversation.id, role: "assistant", content: text.trim(), model, tokenCount: output, attachments: [] });
+                  const [answer]=await tx.insert(messages).values({ conversationId: conversation.id, role: "assistant", content: text.trim(), model, tokenCount: output, taskUsage:taskUsage({input_tokens:input,output_tokens:output,input_tokens_details:{cached_tokens:cached,cache_write_tokens:cacheWrite},output_tokens_details:{reasoning_tokens:reasoning}},{estimated_cost_usd:estimatedCostUsd,usage_complete:usageAvailable}), attachments: [] }).returning({id:messages.id});messageId=answer.id;
                   await tx.insert(usageEvents).values({
                     userId: user.id, conversationId: conversation.id, requestId, model,
                     inputTokens: input, cachedTokens: cached, reasoningTokens: reasoning, outputTokens: output,
-                    estimatedCostUsd: estimatedCostUsd.toFixed(8), routerReason: `${routerReason}_stopped`,
+                    toolDetails:{usageAvailable,cacheWriteTokens:cacheWrite},estimatedCostUsd: estimatedCostUsd.toFixed(8), routerReason: `${routerReason}_stopped`,
                   });
                   await tx.update(conversations).set({ contextTokens: sql`(select coalesce(sum(chat_messages.token_count), 0) from ${messages} chat_messages where chat_messages.conversation_id = ${conversation.id})`, updatedAt: new Date() }).where(eq(conversations.id, conversation.id));
-                }).catch(() => undefined);
+                }).then(()=>{usageRecorded=true;}).catch(() => undefined);
               }
             } else {
               console.error("Streaming AI request failed", error);
               if (isStorageError(error)) {
-                await getDb().insert(usageEvents).values({ userId: user.id, model, requestId, inputTokens: input, cachedTokens: cached, reasoningTokens: reasoning, outputTokens: output, estimatedCostUsd: estimatedCostUsd.toFixed(8), routerReason: `${routerReason}_storage_full` });
+                await getDb().insert(usageEvents).values({ userId: user.id, model, requestId, inputTokens: input, cachedTokens: cached, reasoningTokens: reasoning, outputTokens: output, estimatedCostUsd: estimatedCostUsd.toFixed(8), routerReason: `${routerReason}_storage_full` });usageRecorded=true;
               }
-              emit({ type: "error", error: isStorageError(error) ? STORAGE_ERROR : t("The AI service is unavailable. Your message was saved so you can retry.", "Dịch vụ AI không khả dụng. Tin nhắn đã được lưu để bạn thử lại.") });
+              emit({ type: "error", error: isStorageError(error) ? STORAGE_ERROR : error instanceof Error&&error.message==="OUTPUT_LIMIT"?t("Processing limit reached. Your message is saved; retry or split the task.","Đã chạm giới hạn xử lý. Tin nhắn được giữ; hãy thử lại hoặc chia nhỏ yêu cầu."):t("The AI service is unavailable. Your message was saved so you can retry.", "Dịch vụ AI không khả dụng. Tin nhắn đã được lưu để bạn thử lại.") });
             }
           } finally {
+            // Terminal failures and incomplete streams can still have billable provider usage.
+            // Missing usage is explicitly marked, never presented as confirmed zero cost.
+            if(systemProvider==="openai"&&!usageRecorded&&(requestId||usageAvailable)){
+              const cost=estimateModelCost(model,{input_tokens:input,output_tokens:output,input_tokens_details:{cached_tokens:cached,cache_write_tokens:cacheWrite}});
+              await getDb().insert(usageEvents).values({userId:user.id,conversationId:conversation.id,requestId,model,inputTokens:input,outputTokens:output,cachedTokens:cached,reasoningTokens:reasoning,estimatedCostUsd:cost.toFixed(8),toolDetails:{usageAvailable,cacheWriteTokens:cacheWrite},routerReason:`${routerReason}_incomplete`}).catch(()=>undefined);
+            }
             if (!clientClosed) {
               try { controller.close(); } catch { /* client already disconnected */ }
             }
@@ -531,6 +560,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   let output = 0;
   let cached = 0;
   let reasoning = 0;
+  let cacheWrite=0;
   let requestId: string | null = null;
   let estimatedCostUsd = 0;
   let routerReason: string;
@@ -641,10 +671,10 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
     const data = await response.json() as OpenAiPayload;
     input = data.usage?.input_tokens ?? 0;
     cached = data.usage?.input_tokens_details?.cached_tokens ?? 0;
+    cacheWrite=data.usage?.input_tokens_details?.cache_write_tokens??0;
     output = data.usage?.output_tokens ?? 0;
     reasoning = data.usage?.output_tokens_details?.reasoning_tokens ?? 0;
-    const prices = model === "gpt-6.1-sol" ? { input: 2, cached: 0.1, output: 10 } : { input: 0.1, cached: 0.01, output: 0.5 };
-    estimatedCostUsd = ((input - cached) * prices.input + cached * prices.cached + output * prices.output) / 1_000_000;
+    estimatedCostUsd=estimateModelCost(model,data.usage??{});
     text = data.output_text ?? data.output?.flatMap((item) => item.content ?? []).filter((item) => item.type === "output_text").map((item) => item.text ?? "").join("\n") ?? "";
     // Account for provider usage even if a generated file exceeds storage quota.
     requestId = response.headers.get("x-request-id");
@@ -703,8 +733,10 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
     requestId = response.headers.get("x-request-id");
   }
 
+  let messageId:string|undefined;
+  const finalUsage=taskUsage({input_tokens:input,output_tokens:output,input_tokens_details:{cached_tokens:cached,cache_write_tokens:cacheWrite},output_tokens_details:{reasoning_tokens:reasoning}},{estimated_cost_usd:estimatedCostUsd});
   await getDb().transaction(async (tx) => {
-    await tx.insert(messages).values({ conversationId: conversation.id, role: "assistant", content: text, model, tokenCount: output, attachments: outputAttachments });
+    const [answer]=await tx.insert(messages).values({ conversationId: conversation.id, role: "assistant", content: text, model, tokenCount: output, taskUsage:finalUsage, attachments: outputAttachments }).returning({id:messages.id});messageId=answer.id;
     if (systemProvider === "local") await tx.insert(usageEvents).values({
       userId: user.id, conversationId: conversation.id, requestId, model,
       inputTokens: input, cachedTokens: cached, reasoningTokens: reasoning, outputTokens: output,
@@ -714,9 +746,9 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   });
 
   return NextResponse.json({
-    text, model, provider: systemProvider, webSearchUsed: webSearchTask, attachments: outputAttachments,
+    text, messageId, model, provider: systemProvider, webSearchUsed: webSearchTask, attachments: outputAttachments,
     conversationId: conversation.id, conversationTitle: conversation.title, maxContextTokens,
-    usage: { input_tokens: input, output_tokens: output, total_tokens: input + output },
+    usage: finalUsage,
     estimated_cost_usd: estimatedCostUsd,
     cycle: { used: usedTokens + input + output, limit: user.tokenLimit, unlimited: user.unlimited },
     total: { used: lifetimeUsedTokens + input + output, limit: user.totalTokenLimit, unlimited: user.totalUnlimited },
