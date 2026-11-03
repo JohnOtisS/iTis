@@ -7,7 +7,7 @@ import {fastWordMode} from "../lib/chat-task-policy";
 
 assert.equal(localArtifactIntent("Gửi lại file Word vừa tạo cho tôi"),"resend");
 assert.equal(localArtifactIntent("Xuất cái Kế hoạch phía trên ra bản Word"),"export");
-for(const prompt of ["Xuất Word và PDF", "Xuất Word theo Nghị định 30", "Sửa nội dung rồi xuất Word", "Tóm tắt rồi xuất Word", "Không cần xuất Word", "Chuyển Word sang PDF", "Gửi lại file và thay tên công ty", "Soạn Word mới"])
+for(const prompt of ["Xuất Word và PDF", "Xuất Word theo Nghị định 30", "Sửa nội dung rồi xuất Word", "Tóm tắt rồi xuất Word", "Không cần xuất Word", "Chuyển Word sang PDF", "Gửi lại file và thay tên công ty", "Soạn Word mới", "Thêm địa chỉ rồi xuất Word", "Ghi nhớ văn bản này và xuất Word", "Chuyển sang tiếng Anh rồi xuất Word", "Xóa phần cũ rồi gửi lại file Word"])
   assert.equal(localArtifactIntent(prompt),null,prompt);
 const plan={name:"Ke_hoach_A.docx",url:"old",family:"plan",version:1};
 const next={...plan,url:"new",version:2};const letter={name:"Cong_van_A.docx",url:"letter",version:1};
