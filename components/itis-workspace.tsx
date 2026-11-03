@@ -1940,7 +1940,7 @@ function ChatView({
 
 function MarkdownMessage({ content }: { content: string }) {
   return (
-    <div className="itis-markdown min-w-0 max-w-none break-words [overflow-wrap:anywhere] text-[15px] leading-7 text-[#d5deda]">
+    <div className="itis-markdown min-w-0 max-w-none [overflow-wrap:anywhere] text-[15px] leading-7 text-[#d5deda]">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -2079,7 +2079,7 @@ function MessageAttachments({
                 <FileArchive className="size-4 text-primary" />
               </div>}
               <div className="min-w-0 flex-1">
-                <div title={file.name} className="break-words text-xs font-medium [overflow-wrap:anywhere]">{file.name}</div>
+                <div title={file.name} className="text-xs font-medium [overflow-wrap:anywhere]">{file.name}</div>
                 <div className="mt-0.5 text-[10px] text-muted-foreground">
                   {formatFileSize(file.size, t)} ·{" "}
                   {file.kind === "output" ? t("Created by iTis", "File iTis tạo") : t("Attachment", "File đính kèm")}
