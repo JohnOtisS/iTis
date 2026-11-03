@@ -1,3 +1,5 @@
+import {getUploadLimits} from "@/lib/upload-limits";
+import {uploadError,MB} from "@/lib/upload-policy";
 import {createHash,createHmac} from "node:crypto";
 import {extname} from "node:path";
 import {and,eq,or,sql} from "drizzle-orm";
@@ -36,7 +38,8 @@ export type DocumentMemoryResult={status:"saved"|"duplicate";document:typeof mem
 export async function rememberDocument(input:{userId:string;name:string;type?:string;bytes?:Uint8Array;fileUrl?:string;conversationId?:string;extractedText?:string}):Promise<DocumentMemoryResult>{
  const db=getDb();let bytes=input.bytes;
  if(input.fileUrl){const [owned]=await db.select().from(storedFiles).where(and(eq(storedFiles.url,input.fileUrl),eq(storedFiles.userId,input.userId)));if(!owned)throw new Error("File not found / Không tìm thấy tệp");bytes=new Uint8Array(await readChatFile(input.fileUrl.replace("/api/files/",""))??[]);}
- if(!bytes?.length||bytes.length>20*1024**2)throw new Error("File must be between 1 byte and 20 MB.");
+ if(!bytes?.length||bytes.length>50*MB)throw new Error("File must be between 1 byte and 50 MB.");
+ if(!input.fileUrl){const invalid=uploadError([{size:bytes.length,name:input.name}],await getUploadLimits());if(invalid)throw new Error(invalid);}
  const binaryHash=digest(bytes);const [sameBinary]=await db.select().from(memoryDocuments).where(and(eq(memoryDocuments.userId,input.userId),eq(memoryDocuments.binaryHash,binaryHash)));
  const attachment=(doc:typeof memoryDocuments.$inferSelect):ChatAttachment=>({name:doc.name,url:doc.fileUrl,type:doc.mimeType,size:doc.bytes,kind:"input"});
  if(sameBinary)return {status:"duplicate",document:sameBinary,overlappingChunks:sameBinary.chunkCount,attachment:attachment(sameBinary)};
@@ -62,6 +65,7 @@ export async function rememberDocument(input:{userId:string;name:string;type?:st
  });
 }
 export async function uploadRememberedDocument(userId:string,file:File,conversationId?:string){
+ const invalid=uploadError([file],await getUploadLimits());if(invalid)throw new Error(invalid);
  const bytes=new Uint8Array(await file.arrayBuffer());
  const [prior]=await getDb().select().from(memoryDocuments).where(and(eq(memoryDocuments.userId,userId),eq(memoryDocuments.binaryHash,digest(bytes))));
  if(prior)return rememberDocument({userId,name:file.name,fileUrl:prior.fileUrl,conversationId});

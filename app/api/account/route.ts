@@ -1,3 +1,4 @@
+import {getUploadLimits} from "@/lib/upload-limits";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
@@ -30,7 +31,7 @@ export async function GET() {
   const user = await getCurrentUser();
   if (!user)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const [systemProvider, [conversationLimitSetting], branding] = await Promise.all([
+  const [systemProvider, [conversationLimitSetting], branding,uploadLimits] = await Promise.all([
     getSystemProvider(),
     getDb()
       .select({ value: appSettings.value })
@@ -38,6 +39,7 @@ export async function GET() {
       .where(eq(appSettings.key, "conversation_limits"))
       .limit(1),
     getBrandingSettings(),
+    getUploadLimits(),
   ]);
   // The inactive local stack must never delay OpenAI accounts.
   const [localAi, comfyUi] =
@@ -130,6 +132,7 @@ export async function GET() {
         comfyUiConnected: comfyUi.connected,
         localStatusChecked: systemProvider === "local",
         maxContextTokens,
+        uploadLimits,
         branding,
         database: "postgresql",
         cache: "redis",

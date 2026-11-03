@@ -1,0 +1,14 @@
+import assert from "node:assert/strict";
+import {MB,defaultUploadLimits,normalizeUploadLimits,uploadError,validUploadLimits} from "../lib/upload-policy";
+assert.deepEqual(normalizeUploadLimits(undefined),defaultUploadLimits);
+assert.deepEqual(normalizeUploadLimits({maxFileMb:99}),defaultUploadLimits);
+assert.equal(uploadError([{name:"boundary.docx",size:20*MB}],defaultUploadLimits),null);
+assert.match(uploadError([{name:"oversized.docx",size:20*MB+1}],defaultUploadLimits,true)!,/oversized.docx.*20 MB/);
+const small={maxFileMb:1,maxTotalMb:1,maxFiles:2};
+assert.equal(uploadError([{size:MB}],small),null);
+assert.match(uploadError([{size:600000},{size:600000}],small,true)!,/Tổng/);
+assert.match(uploadError([{size:1},{size:1},{size:1}],small,true)!,/2 tệp/);
+assert.equal(uploadError([{size:25*MB}],{maxFileMb:30,maxTotalMb:50,maxFiles:10}),null);
+assert.equal(validUploadLimits({maxFileMb:50,maxTotalMb:50,maxFiles:10}),true);
+for(const v of [{maxFileMb:51,maxTotalMb:51,maxFiles:10},{maxFileMb:20,maxTotalMb:10,maxFiles:1},{maxFileMb:1.5,maxTotalMb:50,maxFiles:10},{maxFileMb:1,maxTotalMb:1,maxFiles:0}])assert.equal(validUploadLimits(v),false);
+console.log("PASS shared upload limits: exact byte boundary, per-file/total/count errors, changed settings, invalid stored values and hard bounds");

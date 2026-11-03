@@ -1,3 +1,4 @@
+import {defaultUploadLimits,normalizeUploadLimits} from "@/lib/upload-policy";
 import { and, eq, inArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -39,6 +40,7 @@ const settingsSchema = z.object({
       "Tổng phân bổ phải bằng 100%.",
     )
     .optional(),
+  uploadLimits:z.object({maxFileMb:z.number().int().min(1).max(50),maxTotalMb:z.number().int().min(1).max(50),maxFiles:z.number().int().min(1).max(10)}).refine(v=>v.maxTotalMb>=v.maxFileMb,"Total upload limit must be at least the per-file limit.").optional(),
   chatLimits: z
     .object({
       maxContextTokens: z.number().int().min(1000).max(1_000_000),
@@ -59,6 +61,7 @@ const defaults = {
   modelRouter: { lunaPercent: 80, solPercent: 20, enabled: true },
   chatLimits: { maxContextTokens: 50000 },
   branding: defaultBranding,
+  uploadLimits:defaultUploadLimits,
 };
 
 export async function GET() {
@@ -78,6 +81,7 @@ export async function GET() {
         "model_router",
         "conversation_limits",
         "branding",
+        "upload_limits",
       ]),
     );
   const map = Object.fromEntries(rows.map((row) => [row.key, row.value]));
@@ -108,6 +112,7 @@ export async function GET() {
         modelRouter: map.model_router ?? defaults.modelRouter,
         chatLimits: map.conversation_limits ?? defaults.chatLimits,
         branding: normalizeBranding(map.branding),
+        uploadLimits: normalizeUploadLimits(map.upload_limits),
       },
     },
     { headers: { "Cache-Control": "no-store" } },
@@ -137,6 +142,7 @@ export async function PATCH(request: Request) {
     entries.push({ key: "model_router", value: parsed.data.modelRouter });
   if (parsed.data.chatLimits)
     entries.push({ key: "conversation_limits", value: parsed.data.chatLimits });
+  if(parsed.data.uploadLimits)entries.push({key:"upload_limits",value:parsed.data.uploadLimits});
   if (parsed.data.branding)
     entries.push({ key: "branding", value: parsed.data.branding });
   await getDb().transaction(async (tx) => {

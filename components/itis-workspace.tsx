@@ -3,6 +3,7 @@
 /* Native img is intentional for authenticated files, blob previews, and user-uploaded assets. */
 /* eslint-disable @next/next/no-img-element */
 
+import {defaultUploadLimits,uploadError,validUploadLimits,type UploadLimits} from "@/lib/upload-policy";
 import {MemoryDocuments} from "@/components/memory-documents";
 import {AccountSecurity,AccountNotifications} from "@/components/account-security";
 import {AdminNotifications,AdminResetPassword} from "@/components/admin-notifications";
@@ -154,6 +155,7 @@ type Account = {
     aiEnvironment: "local" | "openai";
     localStatusChecked: boolean;
     maxContextTokens: number;
+    uploadLimits:UploadLimits;
     branding: Branding;
   };
   usage: {
@@ -249,6 +251,7 @@ type Settings = {
   tokenReset: { windowHours: number };
   modelRouter: { lunaPercent: number; solPercent: number; enabled: boolean };
   chatLimits: { maxContextTokens: number };
+  uploadLimits:UploadLimits;
   branding: Branding;
 };
 type Branding = {
@@ -311,6 +314,7 @@ const defaultSettings: Settings = {
   tokenReset: { windowHours: 5 },
   modelRouter: { lunaPercent: 80, solPercent: 20, enabled: true },
   chatLimits: { maxContextTokens: 50000 },
+  uploadLimits:defaultUploadLimits,
   branding: { systemLogoUrl: null, chatLogoUrl: null },
 };
 
@@ -481,6 +485,7 @@ export function ItisWorkspace({
         ...(workspaceCache.settings ?? settings),
         aiEnvironment: { provider: nextAccount.system.aiEnvironment },
         chatLimits: { maxContextTokens: nextAccount.system.maxContextTokens },
+        uploadLimits:nextAccount.system.uploadLimits??defaultUploadLimits,
         branding: nextAccount.system.branding,
       } satisfies Settings;
       workspaceCache.settings = publicSettings;
@@ -488,6 +493,7 @@ export function ItisWorkspace({
         ...current,
         aiEnvironment: { provider: nextAccount.system.aiEnvironment },
         chatLimits: { maxContextTokens: nextAccount.system.maxContextTokens },
+        uploadLimits:nextAccount.system.uploadLimits??defaultUploadLimits,
         branding: nextAccount.system.branding,
       }));
       setConversations(nextConversations.conversations);
@@ -804,6 +810,8 @@ export function ItisWorkspace({
       ? t("Analyze the attached files.", "Phân tích các tệp đính kèm.")
       : "");
     if (!clean || sending) return;
+    const invalidUpload=uploadError(options.ignoreAttachment?[]:attachedFiles,account?.system.uploadLimits??defaultUploadLimits,locale==="vi");
+    if(invalidUpload){setDataError(invalidUpload);return;}
     setTaskStage("");
     setRetryableTask(null);
     const displayUser = options.displayUser !== false;
@@ -1289,6 +1297,7 @@ export function ItisWorkspace({
         )}
         {view === "chat" && (
           <ChatView
+            uploadLimits={account?.system.uploadLimits??defaultUploadLimits}
             firstName={firstName}
             messages={messages}
             prompt={prompt}
@@ -1388,6 +1397,7 @@ function AutoExpandSidebar({ children }: { children: React.ReactNode }) {
 }
 
 function ChatView({
+  uploadLimits,
   firstName,
   messages,
   prompt,
@@ -1409,6 +1419,7 @@ function ChatView({
   fileRef,
   chatLogoUrl,
 }: {
+  uploadLimits:UploadLimits;
   firstName: string;
   messages: Msg[];
   prompt: string;
@@ -1445,30 +1456,16 @@ function ChatView({
   const dragDepthRef = useRef(0);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const voiceBasePromptRef = useRef("");
-  const maxAttachmentBytes = 20 * 1024 * 1024;
-  const maxCombinedBytes = 50 * 1024 * 1024;
-  const maxAttachmentCount = 10;
-
   function attachFiles(files: File[]) {
     setAttachmentError("");
     if (!files.length) return;
-    if (files.some((file) => file.size > maxAttachmentBytes)) {
-      setAttachmentError(t("File exceeds the 20MB limit.", "Tệp vượt quá giới hạn 20MB."));
-      return;
-    }
     setAttachedFiles((current) => {
       const unique = [...current];
       for (const file of files) {
         if (!unique.some((item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified)) unique.push(file);
       }
-      if (unique.length > maxAttachmentCount) {
-        setAttachmentError(t("You can attach up to 10 files.", "Bạn có thể đính kèm tối đa 10 tệp."));
-        return current;
-      }
-      if (unique.reduce((sum, file) => sum + file.size, 0) > maxCombinedBytes) {
-        setAttachmentError(t("Attachments are limited to 50MB combined.", "Tổng dung lượng tệp tối đa 50MB."));
-        return current;
-      }
+      const invalid=uploadError(unique,uploadLimits,locale==="vi");
+      if(invalid){setAttachmentError(invalid);return current;}
       return unique;
     });
     if (fileRef.current) fileRef.current.value = "";
@@ -1890,7 +1887,7 @@ function ChatView({
                         <span>
                           <span className="block font-medium">{t("Add file", "Thêm tệp")}</span>
                           <span className="block text-[10px] text-muted-foreground">
-                            {t("Up to 10 files · 20MB each · 50MB total", "Tối đa 10 tệp · 20MB/tệp · tổng 50MB")}
+                            {t(`Up to ${uploadLimits.maxFiles} files · ${uploadLimits.maxFileMb} MB each · ${uploadLimits.maxTotalMb} MB total`,`Tối đa ${uploadLimits.maxFiles} tệp · ${uploadLimits.maxFileMb} MB/tệp · tổng ${uploadLimits.maxTotalMb} MB`)}
                           </span>
                         </span>
                       </button>
@@ -3030,7 +3027,7 @@ function AccountView({
               {t("Forget all text memories", "Quên toàn bộ ghi nhớ dạng chữ")}
             </button>
           )}
-          <MemoryDocuments enabled={account.user.memoryEnabled} vi={locale === "vi"} onChange={reload}/>
+          <MemoryDocuments uploadLimits={account.system.uploadLimits??defaultUploadLimits} enabled={account.user.memoryEnabled} vi={locale === "vi"} onChange={reload}/>
         </section>
         <UsageView account={account} embedded />
         {account?.storage && (
@@ -3771,6 +3768,8 @@ function AdminView({
             </div>
           </section>
         </div>
+
+        <UploadLimitsEditor value={settings.uploadLimits??defaultUploadLimits} onSaved={limits=>{setSettings({...settings,uploadLimits:limits});void reload();}}/>
 
         <section className="mt-4 rounded-3xl border border-white/8 bg-card p-6">
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -4841,4 +4840,15 @@ function shortModelLabel(model?: string | null) {
   if (model.includes("flare")) return "GPT Image 2.5 Flare";
   if (model.includes("comfy")) return "ComfyUI · Local";
   return model;
+}
+
+function UploadLimitsEditor({value,onSaved}:{value:UploadLimits;onSaved:(limits:UploadLimits)=>void}){
+ const {t}=useLanguage();const [editing,setEditing]=useState(false),[saving,setSaving]=useState(false),[draft,setDraft]=useState(value),[notice,setNotice]=useState("");
+ const shown=editing?draft:value;
+ async function save(){
+  if(!validUploadLimits(draft)){setNotice(t("Use 1–50 MB, a combined limit at least as large as one file, and 1–10 files.","Nhập 1–50 MB, tổng dung lượng không nhỏ hơn mỗi tệp, và 1–10 tệp."));return;}
+  setSaving(true);setNotice("");
+  try{const response=await fetch("/api/admin/settings",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({uploadLimits:draft})});const data=await response.json() as {error?:string;settings?:Settings};if(!response.ok||!data.settings)throw new Error(data.error||t("Unable to save limits.","Không lưu được giới hạn."));onSaved(data.settings.uploadLimits);setEditing(false);setNotice(t("Upload limits saved.","Đã lưu giới hạn tải lên."));}catch(error){setNotice(error instanceof Error?error.message:t("Connection failed.","Mất kết nối."));}finally{setSaving(false);}
+ }
+ return <section className="mt-4 rounded-3xl border border-white/8 bg-card p-6"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold">{t("File upload limits","Giới hạn tệp tải lên")}</h3><p className="mt-1 text-sm text-muted-foreground">{t("Admin-managed limits for Chat and remembered documents.","Admin quản lý giới hạn tài liệu trong Chat và Bộ nhớ cá nhân.")}</p></div><div className="flex gap-2">{editing?<><button type="button" disabled={saving} onClick={()=>{setEditing(false);setNotice("");}} className="rounded-lg px-3 py-2 text-xs">{t("Cancel","Hủy")}</button><button type="button" aria-label={t("Save upload limits","Lưu giới hạn tệp")} disabled={saving} onClick={()=>void save()} className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground">{saving?<LoaderCircle className="size-3.5 animate-spin"/>:<Check className="size-3.5"/>}{t("Save","Lưu")}</button></>:<button type="button" aria-label={t("Edit upload limits","Chỉnh sửa giới hạn tệp")} onClick={()=>{setDraft(value);setEditing(true);setNotice("");}} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs"><Pencil className="size-3.5"/>{t("Edit","Chỉnh sửa")}</button>}</div></div><div className="mt-5 grid gap-4 md:grid-cols-3">{([['maxFileMb',t('Maximum per file (MB)','Tối đa mỗi tệp (MB)'),50],['maxTotalMb',t('Combined per upload (MB)','Tổng mỗi lượt (MB)'),50],['maxFiles',t('Files per upload','Số tệp mỗi lượt'),10]] as const).map(([key,label,max])=><label key={key} className="grid gap-2 text-sm">{label}<input type="number" min={1} max={max} step={1} value={shown[key]} readOnly={!editing||saving} onChange={event=>setDraft(current=>({...current,[key]:Number(event.target.value)}))} className="h-11 min-w-0 rounded-xl border bg-white/[.03] px-3 font-mono read-only:text-muted-foreground"/></label>)}</div><p className="mt-3 text-xs leading-5 text-muted-foreground">{t("Up to 50 MB per file and per upload. Account storage quotas and document-reading limits also apply.","Tối đa 50 MB/tệp và 50 MB/lượt. Vẫn áp dụng dung lượng tài khoản và giới hạn đọc tài liệu.")}</p>{notice&&<p role="status" className="mt-3 text-sm text-primary">{notice}</p>}</section>;
 }

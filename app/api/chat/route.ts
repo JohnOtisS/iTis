@@ -1,3 +1,5 @@
+import {getUploadLimits} from "@/lib/upload-limits";
+import {uploadError} from "@/lib/upload-policy";
 import {localArtifactAction} from "@/lib/local-artifacts";
 import {localArtifactIntent} from "@/lib/artifact-policy";
 import {taskUsage,estimateModelCost,terminalProviderUsage} from "@/lib/task-usage";
@@ -178,8 +180,9 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   const fileMemoryIntent=documentMemoryRequest(prompt);
   if(fileMemoryIntent&&!user.memoryEnabled)return NextResponse.json({error:t("Personal memory is disabled by your admin.","Admin đã tắt bộ nhớ cá nhân.")},{status:403});
   if (isImageGeneration(prompt)) return NextResponse.json({code:"USE_IMAGE_STUDIO",error:t("Open Image Studio to generate images. Chat handles documents and analysis.","Hãy mở Studio ảnh để tạo hình. Chat xử lý tài liệu và phân tích."),studioUrl:"/images"},{status:422});
-  if (attachments.length > 10) return NextResponse.json({ error: t("You can attach up to 10 files per message.", "Bạn có thể đính kèm tối đa 10 tệp mỗi tin nhắn.") }, { status: 413 });
-  if (attachments.some((file) => file.size > 20 * 1024 * 1024)) return NextResponse.json({ error: t("Each attachment is limited to 20MB.", "Mỗi tệp đính kèm tối đa 20MB.") }, { status: 413 });
+  const uploadLimits=await getUploadLimits();
+  const invalidUpload=uploadError(attachments,uploadLimits,user.locale==="vi");
+  if(invalidUpload)return NextResponse.json({code:"UPLOAD_LIMIT",error:invalidUpload,uploadLimits},{status:413});
   // File delivery/export is deterministic and does not require an API key or AI quota.
   if(!attachments.length && !regenerate && localArtifactIntent(prompt)){
     if(!conversationId){const [created]=await getDb().insert(conversations).values({userId:user.id,title:makeTitle(prompt,user.locale)}).returning();conversationId=created.id;}
@@ -197,7 +200,6 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   if (!fileMemoryIntent && storage.usedBytes + totalAttachmentBytes + Buffer.byteLength(prompt, "utf8") + 65536 > storage.limitBytes) {
     return NextResponse.json({ code: "STORAGE_LIMIT", error: STORAGE_ERROR }, { status: 413 });
   }
-  if (totalAttachmentBytes > 50 * 1024 * 1024) return NextResponse.json({ error: t("Attachments are limited to 50MB combined.", "Tổng dung lượng tệp đính kèm tối đa 50MB.") }, { status: 413 });
   const attachmentData = await Promise.all(attachments.map(async (file) => ({ file, bytes: new Uint8Array(await file.arrayBuffer()) })));
   const settingRows = await getDb().select({ key: appSettings.key, value: appSettings.value }).from(appSettings);
   const settings = Object.fromEntries(settingRows.map((item) => [item.key, item.value]));
