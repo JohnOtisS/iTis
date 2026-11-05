@@ -2002,8 +2002,7 @@ function ChatView({
             )}
           </div>
           <div className="mx-auto mt-2 flex max-w-3xl items-center justify-center gap-2 text-[11px] text-muted-foreground">
-            <ShieldCheck className="size-3.5" />
-            {t("History is stored privately per account in PostgreSQL", "Lịch sử được lưu riêng theo tài khoản trong PostgreSQL")}
+            {t("Built and configured by Nguyễn Việt Dũng", "Được xây dựng và cấu hình bởi Nguyễn Việt Dũng")}
           </div>
         </div>
       </div>
