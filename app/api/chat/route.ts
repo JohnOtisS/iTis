@@ -19,7 +19,7 @@ import { consolidateUserMemory, isExplicitMemoryRequest, memoryOnlyRequest } fro
 import { externalSafetyIdentifier } from "@/lib/privacy";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { buildChatContext } from "@/lib/chat-context";
-import { documentCatalog, selectDocuments } from "@/lib/chat-documents";
+import { documentCatalog, namedDocuments, selectDocuments } from "@/lib/chat-documents";
 import { fastWordMode, isDocumentEditFollowup, isImageGeneration, needsComputation, needsDocumentOutput } from "@/lib/chat-task-policy";
 import { startChatJob } from "@/lib/chat-jobs";
 import { assertContinuationBudget } from "@/lib/token-budget";
@@ -326,8 +326,11 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   const rememberedContext=user.memoryEnabled?await retrieveDocumentMemory(user.id,prompt):{context:"",files:[] as ChatAttachment[]};
   const rememberedFileTask=needsDocumentOutput(prompt)||isDocumentEditFollowup(prompt,true)||needsComputation(prompt,true);
   const catalog = [...await documentCatalog(conversation.id),...(rememberedFileTask?rememberedContext.files:[])];
-  const referencesFiles = needsDocumentOutput(prompt) || needsFullDocumentReview(prompt,catalog.length) || /file|tệp|tài liệu|dữ liệu|bảng|sheet|cột|dòng|đối chiếu|so sánh|tổng|số liệu|excel|pdf|docx|pptx|csv|xlsx|word|document|data|table|row|column|compare|total|continue|tiếp tục|làm tiếp|sửa|chỉnh|đổi|thay/i.test(prompt) || catalog.some(file=>prompt.toLowerCase().includes(file.name.toLowerCase()));
-  const selectedFiles = attachmentData.length ? [...inputAttachments,...selectDocuments(catalog.filter(file=>!inputAttachments.some(input=>input.url===file.url)),prompt).filter(file=>prompt.toLowerCase().includes(file.name.toLowerCase()))] : referencesFiles ? selectDocuments(catalog,prompt) : [];
+  const referencesFiles = needsDocumentOutput(prompt) || needsFullDocumentReview(prompt,catalog.length) || /file|tệp|tài liệu|dữ liệu|bảng|sheet|slide|cột|dòng|đối chiếu|so sánh|tổng|số liệu|excel|pdf|docx|pptx|potx|powerpoint|csv|xlsx|word|document|data|table|row|column|compare|total|continue|tiếp tục|làm tiếp|sửa|chỉnh|đổi|thay/i.test(prompt) || namedDocuments(catalog,prompt).length>0;
+  const latestUpload = history.findLast(message=>message.role==="user"&&message.attachments.length>0)?.attachments;
+  const selectedFiles = attachmentData.length
+    ? [...inputAttachments,...selectDocuments(namedDocuments(catalog.filter(file=>!inputAttachments.some(input=>input.url===file.url)),prompt),prompt)]
+    : referencesFiles ? selectDocuments(catalog,prompt,latestUpload) : [];
   const shouldReuseFiles = attachmentData.length === 0 && selectedFiles.length > 0;
   const restoredAttachmentData = shouldReuseFiles
     ? (await Promise.all(selectedFiles.slice(0, 10).map(loadStoredAttachment))).filter((item): item is NonNullable<typeof item> => Boolean(item))

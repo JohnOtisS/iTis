@@ -26,7 +26,7 @@ export function inspectDocument(bytes: Uint8Array, name: string, maxCharacters =
       : bytes[0] === 0xfe && bytes[1] === 0xff ? "utf-16be" : "utf-8";
     return new TextDecoder(encoding).decode(bytes).replace(/\0/g, "").slice(0, maxCharacters);
   }
-  if (![".docx", ".xlsx", ".xlsm", ".pptx"].includes(extension)) return null;
+  if (![".docx", ".xlsx", ".xlsm", ".pptx", ".potx"].includes(extension)) return null;
   let expanded = 0;
   const zip = unzipSync(bytes, { filter: entry => {
     const relevant = /^(word\/document\.xml|ppt\/slides\/slide\d+\.xml|xl\/(workbook|sharedStrings|worksheets\/sheet\d+)\.xml|xl\/_rels\/workbook\.xml\.rels)$/.test(entry.name);
@@ -103,28 +103,54 @@ export async function documentCatalog(conversationId: string) {
     .where(and(eq(messages.conversationId, conversationId),sql`jsonb_array_length(${messages.attachments}) > 0`)).orderBy(desc(messages.createdAt), desc(messages.id)).limit(500);
   return [...new Map(rows.flatMap(row => row.attachments as ChatAttachment[]).map(file => [file.url,file])).values()].slice(0,80);
 }
-export function selectDocuments(catalog: ChatAttachment[], prompt: string) {
-  const lower = prompt.toLowerCase();
+export function namedDocuments(catalog: ChatAttachment[], prompt: string) {
+  const text = prompt.normalize("NFC").toLowerCase();
+  const matches = (name: string, stem = false) => {
+    const literal = name.normalize("NFC").toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const prefix = stem ? "(?:\\b(?:file|tệp|tài liệu|document|workbook)\\s+|[\"“`])" : "(?<![\\p{L}\\p{N}_-])";
+    const suffix = stem ? "|\\.[\\p{L}\\p{N}]" : "";
+    return new RegExp(`${prefix}${literal}(?![\\p{L}\\p{N}_-]${suffix})`, "u").test(text);
+  };
+  return catalog.filter(file => {
+    const stem = file.name.slice(0, file.name.length - extname(file.name).length);
+    return matches(file.name) || (stem.length >= 5 && matches(stem, true));
+  });
+}
+export function selectDocuments(catalog: ChatAttachment[], prompt: string, latestUpload: ChatAttachment[] = []) {
+  const text = documentRequestText(prompt);
   const source=sourceFormatText(prompt);
-  const extensions = ["xls","xlsx","xlsm","docx","pptx","pdf","csv","tsv"].filter(ext =>
-    new RegExp(`\\b${ext}\\b`).test(source) || (/^xls/.test(ext) && /\bexcel\b/.test(source)) || (ext === "docx" && /word/.test(source)));
-  const named = catalog.filter(file => lower.includes(file.name.toLowerCase()) || lower.includes(file.name.toLowerCase().replace(/\.[^.]+$/, "")));
-  let candidates = named.length ? named : /\b(original|source)\b|file gốc|tệp gốc/i.test(prompt) ? catalog.filter(file => file.kind === "input") : catalog;
-  if(!named.length&&!/\bv(?:ersion)?\s*\d|bản\s+\d/i.test(prompt)&&/phan tich|tong hop|analy[sz]|synthesi[sz]/.test(documentRequestText(prompt))&&candidates.some(f=>f.kind==="input"))candidates=candidates.filter(f=>f.kind==="input");
-  const kind=documentKind(prompt);
-  if(!named.length&&kind)candidates=candidates.filter(file=>documentKind(file.name)===kind);
-  const requestedVersions = [...prompt.matchAll(/\bv(?:ersion)?\s*(\d+)|bản\s+(\d+)/gi)].map(match=>Number(match[1]??match[2]));
+  const extensions = ["xls","xlsx","xlsm","docx","pptx","potx","pdf","csv","tsv"].filter(ext =>
+    new RegExp(`\\b${ext}\\b`).test(source) || (/^xls/.test(ext) && /\bexcel\b/.test(source)) || (ext === "docx" && /\bword\b/.test(source))
+    || (["pptx","potx"].includes(ext) && /\bpowerpoint\b/.test(source)));
+  const named = namedDocuments(catalog, prompt);
+  const original = /\b(?:original|file goc|tep goc|ban goc)\b/.test(text);
+  const requestedVersions = [...text.matchAll(/\b(?:v(?:ersion)?\s*|ban\s+)(\d+)\b/g)].map(match=>Number(match[1]));
+  const recent = !requestedVersions.length && /\b(?:vua gui|vua tai len|just (?:sent|uploaded)|most recent upload)\b/.test(text)
+    ? catalog.filter(file=>latestUpload.some(upload=>upload.url===file.url)) : [];
+  const wholeBatch = recent.length > 0 && /\b(?:(?:ca|tat ca)\s+(?:(?:\d+|hai|ba|bon|nam|sau|bay|tam|chin|muoi|cac)\s+)?(?:file|tep|tai lieu)\s+vua|all (?:the )?files (?:i )?just (?:sent|uploaded))\b/.test(text);
+  let candidates = recent.length ? recent : catalog;
+  if(named.length)candidates = wholeBatch ? [...new Map([...recent,...named].map(file=>[file.url,file])).values()] : named;
+  if (original) candidates = candidates.filter(file => file.kind !== "output");
   if (requestedVersions.length) candidates = candidates.filter(file => requestedVersions.includes(file.version ?? 1));
-  if (!named.length && extensions.length) {
+  if (!wholeBatch && !named.length && extensions.length) {
     const matching = candidates.filter(file => extensions.includes(extname(file.name).slice(1).toLowerCase()));
-    if (matching.length) candidates = matching;
+    candidates = matching;
   }
-  const seen = new Set<string>();
-  return candidates.filter(file => {
-    const key = `${file.family ?? file.name.toLowerCase()}:${extname(file.name)}${requestedVersions.length?`:${file.version??1}`:""}`;
-    if (seen.has(key)) return false;
-    seen.add(key); return true;
-  }).slice(0,10);
+  const kind=documentKind(source);
+  if(!named.length && !recent.length && kind){
+    const matching=candidates.filter(file=>documentKind(file.name)===kind);
+    if(matching.length)candidates=matching;
+  }
+  if(!named.length&&!recent.length&&!requestedVersions.length&&!extensions.length
+    && !/\b(?:moi nhat|latest|vua tao)\b/.test(text)
+    && /phan tich|tong hop|analy[sz]|synthesi[sz]/.test(text)&&candidates.some(f=>f.kind==="input"))candidates=candidates.filter(f=>f.kind==="input");
+  const latest = new Map<string,ChatAttachment>();
+  for(const file of candidates){
+    const key = `${file.family ?? file.name.toLowerCase()}:${extname(file.name).toLowerCase()}${requestedVersions.length?`:${file.version??1}`:""}`;
+    const previous=latest.get(key);
+    if(!previous || (file.version??1)>(previous.version??1))latest.set(key,file);
+  }
+  return [...latest.values()].slice(0,10);
 }
 export function versionOutput(file: ChatAttachment, sources: ChatAttachment[], catalog: ChatAttachment[]): ChatAttachment {
   const previous = sources.find(source => extname(source.name) === extname(file.name));

@@ -1,10 +1,10 @@
-import {documentRequestText,outputExtensions} from "@/lib/document-request";
+import {affirmativeDocumentRequest,outputExtensions} from "@/lib/document-request";
 export function needsComputation(prompt: string, hasDocuments = false) {
   return /\b(calculate|reconcile|variance|sum|formula|statistics|forecast|audit)\b|tính (?:tổng|toán|thuế|lãi)|công thức|đối chiếu|chênh lệch|thống kê|dự báo|kiểm toán/i.test(prompt)
     || (hasDocuments && /\b(vat|total|quantity|amount)\b|tổng|số lượng|thành tiền|doanh thu/i.test(prompt));
 }
 export function needsDocumentOutput(prompt: string) {
-  prompt = documentRequestText(prompt).replace(/khong\s+(?:can\s+)?(?:xuat|tao|render)\s+(?:file|tep)|do not\s+(?:create|export|generate)\s+(?:any\s+)?files?/gi, "");
+  prompt = affirmativeDocumentRequest(prompt);
   return /\b(chuyen|convert|xuat|export|render|tao|lap|lam|sua|chinh|cap nhat|modify|edit|generate|create|make)\b.{0,70}\b(file|tep|pdf|word|docx|excel|xlsx|csv|powerpoint|pptx|bao cao|report)\b/.test(prompt)
     || /\b(?:cho (?:toi|minh|em|anh)|send me|give me)\s+(?:mot\s+|an?\s+|the\s+)?(?:file|tep)\s+(?:pdf|word|docx|excel|xlsx|csv|powerpoint|pptx)\b/.test(prompt);
 }

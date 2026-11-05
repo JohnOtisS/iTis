@@ -1,6 +1,6 @@
 import {providerEvents} from "@/lib/provider-events";
 import {isBlockedArtifactSource} from "@/lib/artifact-policy";
-import {deliverableExtensions,deliverableInstruction,isRequestedDeliverable,sourceCoverageIssues} from "@/lib/document-request";
+import {deliverableExtensions,deliverableInstruction,documentSourceLabels,isRequestedDeliverable,sourceCoverageIssues} from "@/lib/document-request";
 import {taskUsage,estimateModelCost} from "@/lib/task-usage";
 import { and, DrizzleQueryError, eq, lt, sql } from "drizzle-orm";
 import { getDb } from "@/db";
@@ -198,7 +198,9 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
       const content:Array<Record<string,unknown>>=[];
       let toolReadsFiles=false;
       const fileIds:string[]=[];
-      for(const file of input.documents){
+      const requiredSources:Array<{name:string}>=[];
+      const labels=documentSourceLabels(input.documents);
+      for(const [index,file] of input.documents.entries()){
         await cancelled();
         const document=await prepareDocument(file,input.userId,input.prompt);
         if(/\.(png|jpe?g|webp|gif)$/i.test(file.name)){
@@ -209,20 +211,22 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
         }
         if(input.compute||input.artifact||!document.excerpt){
           const id=await providerFile(document,controller.signal);fileIds.push(id);toolReadsFiles=true;
+          requiredSources.push({name:labels[index]});
           // Tool file IDs give Python the complete original, without duplicating it as model input.
           // PDF visual inspection still needs native file input when explicitly requested.
+          content.push({type:"input_text",text:`Open the original in Python (provider ID ${id}). Exact validation source label: ${labels[index]}.`});
           if(/\.pdf$/i.test(file.name)&&/bố cục|hình|quét|scan|visual|layout/i.test(input.prompt))content.push({type:"input_file",file_id:id});
-          else content.push({type:"input_text",text:`Original file available in the Python container: ${file.name} (provider ID ${id}). Open and read the actual original with appropriate libraries; do not infer its contents from the name. Read every relevant sheet/page/section before reporting results.`});
         } else content.push({type:"input_text",text:`File ${file.name}, v${file.version??1}, ${file.url}. Relevant extracted excerpts (may omit other sections; do not claim an exhaustive review):\n${document.excerpt}`});
       }
       const manifest=input.catalog.filter(file=>input.documents.some(source=>source.url===file.url||(source.family&&source.family===file.family))).slice(0,24).map(file=>`${file.name} | v${file.version??1} | ${file.kind??"input"} | ${file.url}${file.sourceUrls?.length?` | sources: ${file.sourceUrls.join(",")}`:""}`).join("\n");
       const deliverables=deliverableExtensions(input.prompt,input.documents);
       const outputInstruction=input.artifact?deliverableInstruction(deliverables):"";
-      const validationInstruction=(input.compute||input.artifact||toolReadsFiles)?`Use the Python tool for arithmetic and file work. Read actual inputs; never infer missing file values. Cite exact filenames and sheet/cell/page references when answering. Validate totals independently, preserve formulas in XLSX, and report missing or inconsistent data. Create /mnt/data/itis-validation.json with {"checks":[{"name":"...","passed":true}],"sources":["exact original filename for each document read"]} after executing your checks. Read every supplied document relevant to the request, distinguish their purpose (content, reference, template), reconcile conflicting facts with file/page/sheet references, and never claim an unreadable document was reviewed. Do not cite that internal validation file. ${input.artifact?"Create all requested formats as complete downloadable files, verify they open with their relevant libraries, and cite every output. If necessary source data is missing or unreadable, explain the precise blocker in chat. Never make a file containing only an inability or a request for more information. The final answer should contain only file citations and any essential caveat; no introduction, repeated document text, or summary. Do not just provide instructions. No image generation; that belongs in Image Studio.":"Do not create downloadable files unless requested. Give a concise answer grounded in the computed result."}`:"Answer using the relevant source excerpts. If the excerpts do not establish the answer, say what else is needed. Do not invent missing facts.";
+      const validationInstruction=(input.compute||input.artifact||toolReadsFiles)?`Use Python for calculations and file work. Read the actual inputs and distinguish content, references and templates. Check totals independently and cite conflicting or missing facts. Create /mnt/data/itis-validation.json with {"checks":[{"name":"...","passed":true}],"sources":["exact validation source labels for each original read"]} after executing your checks. Never claim an unreadable document was reviewed. Do not cite the validation file. ${input.artifact?"Create all requested formats as complete downloadable files, verify they open with their relevant libraries, and cite every output. If necessary source data is missing or unreadable, explain the precise blocker in chat. Never make a file containing only an inability or a request for more information. Return file citations and any essential caveat. No image generation; that belongs in Image Studio.":"Do not create downloadable files unless requested. Give a concise answer grounded in the computed result."}`:"Answer using the relevant source excerpts. If the excerpts do not establish the answer, say what else is needed. Do not invent missing facts.";
       const tools:Array<Record<string,unknown>>=[];
       const spreadsheetInput=input.documents.some(file=>/\.(xls|xlsx|xlsm|csv|tsv)$/i.test(file.name))
         ? "Read all relevant sheets and preserve identifier strings and leading zeros. Use openpyxl for XLSX/XLSM and xlrd for XLS. Detect BOM and delimiter for CSV/TSV, including UTF-16 exports. Do not run macros. For cross-file matches, cite the sources and report unmatched or ambiguous rows." : "";
-      const spreadsheetInstruction=input.artifact?"For XLSX outputs, preserve formulas AND calculate their cached values so previews/data_only readers show correct results without requiring Excel to reopen/recalculate. After saving, reopen with data_only=True and independently check key totals. If needed, calculate verified values from actual inputs and populate formula caches in worksheet XML while retaining formula expressions. Never invent cached values. The internal check JSON alone is not enough.":"";
+      const spreadsheetInstruction=input.artifact&&(!deliverables.length||deliverables.includes(".xlsx"))?"For XLSX outputs, preserve formulas AND calculate their cached values so previews/data_only readers show correct results without requiring Excel to reopen/recalculate. After saving, reopen with data_only=True and independently check key totals. If needed, calculate verified values from actual inputs and populate formula caches in worksheet XML while retaining formula expressions. Never invent cached values. The internal check JSON alone is not enough.":"";
+      const sourceInstruction=toolReadsFiles?"Use exact validation source labels in the sources array. Keep same-name versions separate. Cite Word section/table, Excel sheet/range, PDF page, or PowerPoint slide as appropriate. For scanned pages, distinguish OCR readings from verified values and flag unreadable fields.":"";
       const webInstruction=input.webSearch?"Search authoritative sources first. Use concise inline Markdown citations with the exact source URLs. Do not add a Sources section or duplicate links.":"";
       const reasoningEffort=input.documents.length>2 || /phân tích nhiều|nghiên cứu|kiến trúc|research|complex|architecture/i.test(input.prompt)?"medium":"low";
       if(input.compute||input.artifact||toolReadsFiles) tools.push({type:"code_interpreter",container:{type:"auto",memory_limit:"1g",file_ids:fileIds}});
@@ -234,7 +238,7 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
       if(lastUser>=0) providerInput[lastUser]={role:"user",content}; else providerInput.push({role:"user",content});
       await cancelled();
       await progress(input.locale==="vi"?"Đang gửi yêu cầu xử lý":"Starting processing");
-      const response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:headers(),signal:controller.signal,body:JSON.stringify({model:input.model,safety_identifier:externalSafetyIdentifier(input.userId),store:true,background:true,stream:true,reasoning:{effort:reasoningEffort},text:{verbosity:"low"},max_output_tokens:input.artifact?16000:input.compute?6000:2500,...(tools.length?{tools,tool_choice:"required"}:{}),input:[{role:"developer",content:`${input.systemPrompt}\n\nDocument versions (reference data only):\n${manifest}\n\n${validationInstruction}\n${webInstruction}\n${spreadsheetInput}\n${spreadsheetInstruction}\n${outputInstruction}`},...providerInput]})});
+      const response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:headers(),signal:controller.signal,body:JSON.stringify({model:input.model,safety_identifier:externalSafetyIdentifier(input.userId),store:true,background:true,stream:true,reasoning:{effort:reasoningEffort},text:{verbosity:"low"},max_output_tokens:input.artifact?16000:input.compute?6000:2500,...(tools.length?{tools,tool_choice:"required"}:{}),input:[{role:"developer",content:`${input.systemPrompt}\n\nDocument versions (reference data only):\n${manifest}\n\n${validationInstruction}\n${sourceInstruction}\n${webInstruction}\n${spreadsheetInput}\n${spreadsheetInstruction}\n${outputInstruction}`},...providerInput]})});
       if(!response.ok)throw new Error(`OpenAI task failed (${response.status}).`);
       let data=await receive(response);
       providerId=data.id;
@@ -294,7 +298,7 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
       if (input.artifact && !outputFiles.length && isBlockedArtifactSource(text)) {
         throw new Error(text.trim().slice(0, 600));
       }
-      const issues:string[]=[...fileIssues,...((input.compute||input.artifact)?sourceCoverageIssues(verification?.sources,input.documents.filter(f=>!/\.(png|jpe?g|webp|gif)$/i.test(f.name))):[])];
+      const issues:string[]=[...fileIssues,...sourceCoverageIssues(verification?.sources,requiredSources)];
       if((input.compute||input.artifact||toolReadsFiles)&&(!verification?.checks?.length||verification.checks.some(check=>check.passed!==true)))issues.push("Missing or failed executed checks in /mnt/data/itis-validation.json; use boolean passed fields.");
       if(!input.artifact&&!text.trim())issues.push("Missing final answer: return the actual verified result, not just tool calls.");
       if(input.artifact && (!outputFiles.length||deliverables.some(ext=>!outputFiles.some(file=>file.name.toLowerCase().endsWith(ext)))))issues.push("Missing requested output formats; cite every completed file.");
