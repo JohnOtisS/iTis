@@ -61,11 +61,7 @@ export async function GET() {
     .select({
       inputTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens}), 0)`,
       outputTokens: sql<number>`coalesce(sum(${usageEvents.outputTokens}), 0)`,
-      costUsd: sql<string>`coalesce(sum(${usageEvents.estimatedCostUsd}), 0)`,
       requests: sql<number>`count(*)`,
-      toolCostUsd: sql<string>`coalesce(sum(${usageEvents.toolCostUsd}), 0)`,
-      cachedTokens: sql<number>`coalesce(sum(${usageEvents.cachedTokens}), 0)`,
-      reasoningTokens: sql<number>`coalesce(sum(${usageEvents.reasoningTokens}), 0)`,
     })
     .from(usageEvents)
     .where(
@@ -75,9 +71,7 @@ export async function GET() {
     .select({
       inputTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens}), 0)`,
       outputTokens: sql<number>`coalesce(sum(${usageEvents.outputTokens}), 0)`,
-      costUsd: sql<string>`coalesce(sum(${usageEvents.estimatedCostUsd}), 0)`,
       requests: sql<number>`count(*)`,
-      toolCostUsd: sql<string>`coalesce(sum(${usageEvents.toolCostUsd}), 0)`,
     })
     .from(usageEvents)
     .where(eq(usageEvents.userId, user.id));
@@ -85,7 +79,6 @@ export async function GET() {
     .select({
       model: usageEvents.model,
       tokens: sql<number>`coalesce(sum(${usageEvents.inputTokens} + ${usageEvents.outputTokens}), 0)`,
-      costUsd: sql<string>`coalesce(sum(${usageEvents.estimatedCostUsd}), 0)`,
     })
     .from(usageEvents)
     .where(
@@ -148,13 +141,7 @@ export async function GET() {
           : Math.max(0, user.totalTokenLimit - totalUsed),
         totalLimit: user.totalTokenLimit,
         totalUnlimited: user.totalUnlimited,
-        lifetimeCostUsd: Number(lifetimeUsage.costUsd),
-        lifetimeToolCostUsd: Number(lifetimeUsage.toolCostUsd),
-        lifetimeModelCostUsd: Number(lifetimeUsage.costUsd)-Number(lifetimeUsage.toolCostUsd),
-        cachedTokens: Number(usage.cachedTokens),
-        reasoningTokens: Number(usage.reasoningTokens),
         lifetimeRequests: Number(lifetimeUsage.requests),
-        costUsd: Number(usage.costUsd),
         requests: Number(usage.requests),
         resetsAt: new Date(
           since.getTime() + user.resetWindowHours * 60 * 60 * 1000,
@@ -162,7 +149,6 @@ export async function GET() {
         byModel: byModel.map((item) => ({
           model: item.model,
           tokens: Number(item.tokens),
-          costUsd: Number(item.costUsd),
         })),
         daily: daily.map((item) => ({
           day: item.day,

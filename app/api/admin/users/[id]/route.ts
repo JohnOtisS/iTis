@@ -5,8 +5,8 @@ import { and, desc, eq, gt, ne, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { conversations, imageGenerations, messages, usageEvents, users, sessions } from "@/db/schema";
-import { requireAdmin, currentSessionHash } from "@/lib/auth";
+import { accountTokenGrants, conversations, imageGenerations, messages, usageEvents, users, sessions } from "@/db/schema";
+import { accountAccessExpired, requireAdmin, currentSessionHash } from "@/lib/auth";
 import { deleteAvatarFile } from "@/lib/avatar-files";
 import { deleteChatFile, type ChatAttachment } from "@/lib/chat-files";
 import { abortImageJob } from "@/lib/image-jobs";
@@ -22,6 +22,8 @@ const updateSchema = z.object({
   tokenLimit: z.number().int().min(0).max(1_000_000_000).optional(),
   unlimited: z.boolean().optional(),
   totalTokenLimit: z.number().int().min(0).max(100_000_000_000).optional(),
+  tokenGrant: z.object({ id: z.string().uuid(), amount: z.number().int().positive().max(100_000_000_000) }).optional(),
+  accessExpiresAt: z.string().datetime({ offset: true }).nullable().optional(),
   totalUnlimited: z.boolean().optional(),
   storageLimitBytes: z.number().int().min(0).max(1024 ** 4).optional(),
   resetWindowHours: z.number().int().min(1).max(168).optional(),
@@ -50,21 +52,41 @@ export async function PATCH(
       { status: 400 },
     );
   const { id } = await context.params;
-  const { password, ...rest } = parsed.data;
+  const { password, tokenGrant, accessExpiresAt, ...rest } = parsed.data;
+  if (tokenGrant && rest.totalTokenLimit !== undefined)
+    return NextResponse.json({ error: "Use either a token grant or a total allocation." }, { status: 400 });
+  const expiresAt = typeof accessExpiresAt === "string" ? new Date(accessExpiresAt) : accessExpiresAt;
+  if (expiresAt && !Number.isFinite(expiresAt.getTime()))
+    return NextResponse.json({ error: "Invalid account expiry." }, { status: 400 });
   const values = {
     ...rest,
     ...(rest.email ? { email: rest.email.toLowerCase() } : {}),
     ...(password ? { passwordHash: await bcrypt.hash(password, 12) } : {}),
     ...(rest.memoryEnabled!==undefined||rest.autoMemory!==undefined?{memoryVersion:sql`${users.memoryVersion}+1`}:{}),
+    ...(expiresAt !== undefined ? { accessExpiresAt: expiresAt } : {}),
     updatedAt: new Date(),
   };
   try {
     const keepCurrentHash=admin.id===id?await currentSessionHash():null;
-    const updated=await getDb().transaction(async tx=>{
-      const [owner]=await tx.select({id:users.id}).from(users).where(eq(users.id,id)).for("update");
+    const result=await getDb().transaction(async tx=>{
+      const [owner]=await tx.select({role:users.role,accessExpiresAt:users.accessExpiresAt,totalTokenLimit:users.totalTokenLimit}).from(users).where(eq(users.id,id)).for("update");
       if(!owner)return null;
+      if ((rest.role ?? owner.role) === "admin" && (expiresAt === undefined ? owner.accessExpiresAt : expiresAt))
+        return { error: "Administrator accounts cannot have an access deadline." };
+
+      let grantedTotal: number | undefined;
+      if (tokenGrant) {
+        const [grant] = await tx.select().from(accountTokenGrants).where(eq(accountTokenGrants.id, tokenGrant.id));
+        if (grant && (grant.userId !== id || grant.amount !== tokenGrant.amount))
+          return { error: "This grant ID has already been used." };
+        if (!grant) {
+          grantedTotal = owner.totalTokenLimit + tokenGrant.amount;
+          if (grantedTotal > 100_000_000_000) return { error: "Total allocation cannot exceed 100 billion tokens." };
+          await tx.insert(accountTokenGrants).values({ id: tokenGrant.id, userId: id, amount: tokenGrant.amount });
+        }
+      }
       const [updated]=await tx.update(users)
-      .set(values)
+      .set({ ...values, ...(grantedTotal !== undefined ? { totalTokenLimit: grantedTotal } : {}) })
       .where(eq(users.id, id))
       .returning({
         id: users.id,
@@ -77,22 +99,27 @@ export async function PATCH(
         totalUnlimited: users.totalUnlimited,
         isActive: users.isActive,
         allowMultipleSessions: users.allowMultipleSessions,
+        accessExpiresAt: users.accessExpiresAt,
       });
-      if(password||rest.isActive===false)await tx.delete(sessions).where(eq(sessions.userId,id));
+      if(password||rest.isActive===false||accountAccessExpired(owner.accessExpiresAt)||accountAccessExpired(updated.accessExpiresAt))await tx.delete(sessions).where(eq(sessions.userId,id));
       else if(rest.allowMultipleSessions===false){
         const [current]=keepCurrentHash?await tx.select({id:sessions.id}).from(sessions).where(and(eq(sessions.userId,id),eq(sessions.tokenHash,keepCurrentHash),gt(sessions.expiresAt,new Date()))).limit(1):[];
         const [latest]=current?[current]:await tx.select({id:sessions.id}).from(sessions).where(and(eq(sessions.userId,id),gt(sessions.expiresAt,new Date()))).orderBy(desc(sessions.createdAt),desc(sessions.id)).limit(1);
         await tx.delete(sessions).where(and(eq(sessions.userId,id),latest?ne(sessions.id,latest.id):undefined));
       }
-      return updated;
+      return { user: updated };
     });
-    if (!updated)
+    if (!result)
       return NextResponse.json(
         { error: "Không tìm thấy người dùng." },
         { status: 404 },
       );
-    return NextResponse.json({ user: updated });
-  } catch {
+    if ("error" in result) return NextResponse.json({ error: result.error }, { status: 400 });
+    return NextResponse.json(result);
+  } catch (error) {
+    if ((error as { cause?: { code?: string } }).cause?.code !== "23505") {
+      return NextResponse.json({ error: "Unable to save account settings." }, { status: 500 });
+    }
     return NextResponse.json(
       { error: "Email đã được tài khoản khác sử dụng." },
       { status: 409 },

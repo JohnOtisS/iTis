@@ -85,6 +85,44 @@ try {
   assert.equal(listed.users.find(u => u.id === createdId).allowMultipleSessions, false);
   console.log("PASS account creation and admin listing honor single-session policy");
 
+  const heartbeat = token => api(token, "/api/account/activity", undefined, "POST");
+  const activity = async () => Number((await pool.query("select active_seconds from users where id=$1", [ids[1]])).rows[0].active_seconds);
+  assert.equal((await heartbeat(null)).status, 401);
+  assert.equal((await heartbeat(d)).status, 204);
+  assert.equal(await activity(), 0);
+  await pool.query("update users set activity_ping_at=now()-interval '60 seconds' where id=$1", [ids[1]]);
+  assert.deepEqual(await Promise.all([d,e].map(async token => (await heartbeat(token)).status)), [204,204]);
+  const measured = await activity();
+  assert.ok(measured >= 59 && measured <= 65, `Expected a single minute, recorded ${measured}s`);
+  await pool.query("update users set activity_ping_at=now()-interval '6 minutes' where id=$1", [ids[1]]);
+  assert.equal((await heartbeat(d)).status, 204);
+  assert.equal(await activity(), measured);
+  console.log("PASS activity deduplicates devices and ignores idle gaps");
+
+  const before = listed.users.find(u => u.id === ids[1]);
+  const tokenGrant = { id: randomUUID(), amount: 125_000 };
+  await Promise.all([
+    patch({ tokenGrant }),
+    patch({ tokenGrant }),
+    patch({ tokenGrant: { id: randomUUID(), amount: 25_000 } }),
+  ]);
+  const refreshed = (await (await api(adminToken, "/api/admin/users")).json()).users.find(u => u.id === ids[1]);
+  assert.equal(refreshed.totalTokenLimit, before.totalTokenLimit + 150_000);
+  assert.equal(refreshed.usedTokens, before.usedTokens);
+  assert.equal(refreshed.activeSeconds, measured);
+  console.log("PASS concurrent token grants add to allocation and retries cannot double-credit");
+
+  await patch({ accessExpiresAt: new Date(Date.now()+60_000).toISOString() });
+  assert.equal(await active(e), 200);
+  await pool.query("update users set access_expires_at=now()-interval '1 second' where id=$1", [ids[1]]);
+  assert.equal(await active(e), 401);
+  assert.equal((await heartbeat(e)).status, 401);
+  assert.equal((await api(null, "/api/auth/login", {email,password})).status, 403);
+  await patch({ accessExpiresAt: new Date(Date.now()+3_600_000).toISOString() });
+  assert.equal(await active(e), 401);
+  assert.equal(await active(await login()), 200);
+  console.log("PASS deadline blocks login and old sessions; renewal requires a fresh login");
+
   await patch({ isActive: false });
   assert.equal(await count(), 0);
   assert.equal(await active(e), 401);

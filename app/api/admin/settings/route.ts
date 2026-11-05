@@ -1,9 +1,9 @@
 import {defaultUploadLimits,normalizeUploadLimits} from "@/lib/upload-policy";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/db";
-import { appSettings, users } from "@/db/schema";
+import { accountTokenGrants, appSettings, users } from "@/db/schema";
 import { requireAdmin } from "@/lib/auth";
 import { defaultBranding, normalizeBranding } from "@/lib/branding";
 import { defaultRoleLimits, normalizeRolePlan } from "@/lib/quota-plans";
@@ -167,7 +167,9 @@ export async function PATCH(request: Request) {
           .set({
             tokenLimit: plan.cycleTokens,
             unlimited: plan.cycleUnlimited,
-            totalTokenLimit: plan.totalTokens,
+            totalTokenLimit: sql`case when exists (
+              select 1 from ${accountTokenGrants} where ${accountTokenGrants.userId} = ${users.id}
+            ) then ${users.totalTokenLimit} else ${plan.totalTokens} end`,
             totalUnlimited: plan.totalUnlimited,
             updatedAt: new Date(),
           })

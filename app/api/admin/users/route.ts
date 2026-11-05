@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { appSettings, usageEvents, users } from "@/db/schema";
-import { requireAdmin } from "@/lib/auth";
+import { accountAccessExpired, requireAdmin } from "@/lib/auth";
 import { emailSettings,enqueueNotification,publicUrl } from "@/lib/notifications";
 import { defaultRoleLimits, normalizeRolePlan } from "@/lib/quota-plans";
 
@@ -60,6 +60,8 @@ export async function GET() {
       isActive: users.isActive,
       createdAt: users.createdAt,
       lastSeenAt: users.lastSeenAt,
+      accessExpiresAt: users.accessExpiresAt,
+      activeSeconds: users.activeSeconds,
       allowMultipleSessions: users.allowMultipleSessions,
       usedTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens} + ${usageEvents.outputTokens}), 0)`,
       costUsd: sql<string>`coalesce(sum(${usageEvents.estimatedCostUsd}), 0)`,
@@ -72,6 +74,7 @@ export async function GET() {
     {
       users: rows.map((row) => ({
         ...row,
+        accessExpired: accountAccessExpired(row.accessExpiresAt),
         usedTokens: Number(row.usedTokens),
         costUsd: Number(row.costUsd),
       })),

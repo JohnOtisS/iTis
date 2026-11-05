@@ -8,6 +8,10 @@ import { sessions, users } from "@/db/schema";
 export const SESSION_COOKIE = "itis_session";
 const SESSION_DAYS = 30;
 
+export function accountAccessExpired(expiresAt: Date | null) {
+  return expiresAt !== null && expiresAt.getTime() <= Date.now();
+}
+
 export type AppUser = {
   id: string;
   email: string;
@@ -64,6 +68,7 @@ export async function getCurrentUser(): Promise<AppUser | null> {
       eq(sessions.tokenHash, hashToken(token)),
       gt(sessions.expiresAt, new Date()),
       eq(users.isActive, true),
+      or(isNull(users.accessExpiresAt), gt(users.accessExpiresAt, new Date())),
     ))
     .limit(1);
 
@@ -95,7 +100,7 @@ export async function createSession(userId: string, expectedPasswordHash?: strin
   const created=await getDb().transaction(async tx=>{
     // Serialize logins with policy/password changes, including concurrent logins.
     const [owner]=await tx.select().from(users).where(eq(users.id,userId)).for("update");
-    if(!owner?.isActive||(expectedPasswordHash&&owner.passwordHash!==expectedPasswordHash))return false;
+    if(!owner?.isActive||accountAccessExpired(owner.accessExpiresAt)||(expectedPasswordHash&&owner.passwordHash!==expectedPasswordHash))return false;
     if(!owner.allowMultipleSessions)await tx.delete(sessions).where(eq(sessions.userId,userId));
     await tx.insert(sessions).values({userId,tokenHash:hashToken(token),expiresAt});
     return true;

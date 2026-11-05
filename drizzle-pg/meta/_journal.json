@@ -134,6 +134,13 @@
       "when": 1793645000000,
       "tag": "0018_task_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793900000000,
+      "tag": "0019_account_access_activity",
+      "breakpoints": true
     }
   ]
 }

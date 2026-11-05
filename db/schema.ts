@@ -36,10 +36,20 @@ export const users = pgTable("users", {
   allowOpenAiFiles: boolean("allow_openai_files").notNull().default(false),
   allowMultipleSessions: boolean("allow_multiple_sessions").notNull().default(true),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  accessExpiresAt: timestamp("access_expires_at", { withTimezone: true }),
+  activeSeconds: bigint("active_seconds", { mode: "number" }).notNull().default(0),
+  activityPingAt: timestamp("activity_ping_at", { withTimezone: true }),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [uniqueIndex("users_email_unique").on(table.email)]);
+
+export const accountTokenGrants = pgTable("account_token_grants", {
+  id: uuid("id").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  amount: bigint("amount", { mode: "number" }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("account_token_grants_user_idx").on(table.userId)]);
 
 export const storedFiles = pgTable("stored_files", {
   url: text("url").primaryKey(),

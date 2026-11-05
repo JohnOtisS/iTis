@@ -31,7 +31,6 @@ import {
   FileArchive,
   FileSpreadsheet,
   GitBranch,
-  Globe2,
   Image as ImageIcon,
   Infinity as InfinityIcon,
   KeyRound,
@@ -51,7 +50,6 @@ import {
   Sparkles,
   Trash2,
   Users,
-  WalletCards,
   X,
 } from "lucide-react";
 import {
@@ -168,20 +166,14 @@ type Account = {
     remaining: number | null;
     limit: number;
     unlimited: boolean;
-    costUsd: number;
     requests: number;
     resetsAt: string;
     totalUsed: number;
     totalRemaining: number | null;
     totalLimit: number;
     totalUnlimited: boolean;
-    lifetimeCostUsd: number;
-    lifetimeToolCostUsd: number;
-    lifetimeModelCostUsd: number;
-    cachedTokens: number;
-    reasoningTokens: number;
     lifetimeRequests: number;
-    byModel: Array<{ model: string; tokens: number; costUsd: number }>;
+    byModel: Array<{ model: string; tokens: number }>;
     daily: Array<{ day: string; tokens: number }>;
   };
   memory: { count: number };
@@ -201,6 +193,9 @@ type UserMemory = {
 type Member = {
   allowMultipleSessions: boolean;
   lastSeenAt: string | null;
+  accessExpiresAt: string | null;
+  accessExpired: boolean;
+  activeSeconds: number;
   storageLimitBytes: number;
   storageUsedBytes: number;
   id: string;
@@ -368,7 +363,6 @@ export function ItisWorkspace({
   );
   const [dataError, setDataError] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [taskStage, setTaskStage] = useState("");
@@ -410,9 +404,37 @@ export function ItisWorkspace({
       ? account.system.localAiConnected
       : account.system.openaiConfigured
     : null;
-  const webSearchAvailable = Boolean(
-    account?.user.aiProvider === "openai" && account.system.openaiConfigured,
-  );
+  const signedInUserId = account?.user.id;
+  useEffect(() => {
+    if (!signedInUserId) return;
+    let lastInteraction = Date.now();
+    let lastPing = 0;
+    let disposed = false;
+    function ping() {
+      const now = Date.now();
+      if (document.visibilityState !== "visible" || !document.hasFocus() ||
+        now - lastInteraction > 5 * 60_000 || now - lastPing < 55_000) return;
+      lastPing = now;
+      void fetch("/api/account/activity", { method: "POST" })
+        .then(response => {
+          if (!disposed && response.status === 401) window.location.replace("/login");
+        })
+        .catch(() => {});
+    }
+    function interact() {
+      lastInteraction = Date.now();
+      ping();
+    }
+    const events = ["pointerdown", "keydown", "scroll", "focus"] as const;
+    for (const event of events) window.addEventListener(event, interact, { capture: true, passive: true });
+    const timer = window.setInterval(ping, 60_000);
+    ping();
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      for (const event of events) window.removeEventListener(event, interact, true);
+    };
+  }, [signedInUserId]);
   const activeProviderLabel = !account
     ? t("Connecting", "Đang kết nối")
     : view === "images"
@@ -885,7 +907,6 @@ export function ItisWorkspace({
       const targetConversationId = options.conversationIdOverride ?? conversationId;
       if (targetConversationId) form.set("conversationId", targetConversationId);
       if (!options.ignoreAttachment) attachedFiles.forEach((file) => form.append("files", file));
-      if (webSearchEnabled) form.set("webSearch", "true");
       if (options.regenerate) form.set("regenerate", "true");
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -949,7 +970,6 @@ export function ItisWorkspace({
             if (event.type === "error") throw new Error(event.error || t("The AI service is unavailable.", "Dịch vụ AI không khả dụng."));
         }
         setAttachedFiles([]);
-        setWebSearchEnabled(false);
         return;
       }
       const data = (await response.json()) as {
@@ -994,7 +1014,6 @@ export function ItisWorkspace({
         },
       ]);
       setAttachedFiles([]);
-      setWebSearchEnabled(false);
     } catch (error) {
       if(activeJobRef.current && retryConversationId)setRetryableTask({prompt:clean,conversationId:retryConversationId});
       if (error instanceof DOMException && error.name === "AbortError") {
@@ -1050,6 +1069,7 @@ export function ItisWorkspace({
     <LocaleContext.Provider value={account?.user.locale ?? user.locale ?? "en"}>
     <SidebarProvider
       defaultOpen={initialSidebarOpen}
+      className="itis-workspace-shell"
       style={
         {
           "--sidebar-width": "17rem",
@@ -1058,14 +1078,14 @@ export function ItisWorkspace({
       }
     >
       <AutoExpandSidebar>
-        <SidebarHeader className="relative px-4 pb-3 pt-5 group-data-[collapsible=icon]:px-3">
+        <SidebarHeader className="relative px-3 pb-3 pt-5">
           <SidebarTrigger
-            className="absolute right-3 top-5 z-10 hidden size-8 rounded-lg border border-white/10 bg-white/[.035] hover:bg-white/[.08] md:inline-flex group-data-[collapsible=icon]:hidden"
+            className="itis-sidebar-label absolute right-3 top-5 z-10 hidden size-8 rounded-lg border border-white/10 bg-white/[.035] hover:bg-white/[.08] md:inline-flex"
             title={t("Collapse sidebar", "Thu gọn thanh bên")}
           />
-          <div className="flex items-center gap-3 px-2 pr-10 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-            <BrandLogo src={systemLogoUrl} size={38} className="shrink-0" />
-            <div className="group-data-[collapsible=icon]:hidden">
+          <div className="flex items-center gap-3">
+            <BrandLogo src={systemLogoUrl} size={40} className="shrink-0" />
+            <div className="itis-sidebar-label whitespace-nowrap">
               <div className="text-[17px] font-semibold tracking-tight">
                 iTis
               </div>
@@ -1077,25 +1097,29 @@ export function ItisWorkspace({
           <button
             onClick={startNewChat}
             title={t("New chat", "Chat mới")}
-            className="mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary font-semibold text-primary-foreground hover:bg-[#c7ff8e] group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-10"
+            className="mt-5 flex h-10 w-full items-center gap-2 overflow-hidden rounded-xl bg-primary px-3 font-semibold text-primary-foreground hover:bg-[#c7ff8e]"
           >
-            <Plus className="size-4" />
-            <span className="group-data-[collapsible=icon]:hidden">
+            <Plus className="size-4 shrink-0" />
+            <span className="itis-sidebar-label whitespace-nowrap">
               {t("New chat", "Chat mới")}
             </span>
           </button>
         </SidebarHeader>
-        <SidebarContent className="no-scrollbar px-3 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-0">
-          <label className="mb-3 flex items-center gap-2 rounded-xl border border-white/8 bg-white/[.025] px-3 py-2.5 text-sm text-muted-foreground group-data-[collapsible=icon]:hidden">
-            <Search className="size-4" />
-            <input
-              value={historyQuery}
-              onChange={(event) => setHistoryQuery(event.target.value)}
-              placeholder={t("Search history", "Tìm lịch sử")}
-              className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
-            />
-          </label>
-          <SidebarMenu className="group-data-[collapsible=icon]:w-auto group-data-[collapsible=icon]:items-center">
+        <SidebarContent className="no-scrollbar px-3">
+          <div className="itis-sidebar-reveal itis-sidebar-label">
+            <div className="min-h-0 overflow-hidden">
+              <label className="mb-3 flex items-center gap-2 rounded-xl border border-white/8 bg-white/[.025] px-3 py-2.5 text-sm text-muted-foreground">
+                <Search className="size-4" />
+                <input
+                  value={historyQuery}
+                  onChange={(event) => setHistoryQuery(event.target.value)}
+                  placeholder={t("Search history", "Tìm lịch sử")}
+                  className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
+                />
+              </label>
+            </div>
+          </div>
+          <SidebarMenu>
             <NavItem
               active={view === "chat"}
               onClick={() => navigate("chat")}
@@ -1120,10 +1144,10 @@ export function ItisWorkspace({
               />
             )}
           </SidebarMenu>
-          <div className="mb-2 mt-7 px-2 text-[11px] font-semibold uppercase tracking-[.16em] text-muted-foreground group-data-[collapsible=icon]:hidden">
+          <div className="itis-sidebar-label mb-2 mt-7 px-2 text-[11px] font-semibold uppercase tracking-[.16em] text-muted-foreground">
             {t("Recent", "Gần đây")}
           </div>
-          <div className="space-y-1 group-data-[collapsible=icon]:hidden">
+          <div className="itis-sidebar-label space-y-1">
             {filteredConversations.map((chat) => (
               <div
                 key={chat.id}
@@ -1163,67 +1187,73 @@ export function ItisWorkspace({
             )}
           </div>
         </SidebarContent>
-        <SidebarFooter className="p-3 group-data-[collapsible=icon]:p-2">
-          <div className="rounded-2xl border border-white/8 bg-white/[.025] p-3 group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-0">
-            <div className="mb-2 flex items-center justify-between text-xs group-data-[collapsible=icon]:hidden">
-              <span className="text-muted-foreground">
-                {t("Cycle", "Chu kỳ")} {account?.user.resetWindowHours ?? 5} {t("hours", "giờ")}
-              </span>
-              <span className="font-mono text-primary">
-                {account?.usage.unlimited
-                  ? "∞"
-                  : (account?.usage.remaining ?? 0).toLocaleString("vi-VN")}
-              </span>
-            </div>
-            <Progress
-              value={
-                account?.usage.unlimited
-                  ? 0
-                  : Math.min(
-                      100,
-                      ((account?.usage.used ?? 0) /
-                        Math.max(1, account?.usage.limit ?? 1)) *
-                        100,
-                    )
-              }
-              className="h-1.5 bg-white/8 group-data-[collapsible=icon]:hidden [&>div]:bg-primary"
-            />
-            {conversationId && (
-              <div className="mt-3 group-data-[collapsible=icon]:hidden">
-                <div className="mb-1.5 flex items-center justify-between text-[11px]">
-                  <span className="text-muted-foreground">{t("Chat context", "Context chat")}</span>
-                  <span
-                    className={`font-mono ${contextPercent >= 90 ? "text-amber-300" : "text-foreground"}`}
-                  >
-                    {(activeConversation?.contextTokens ?? 0).toLocaleString(
-                      "vi-VN",
-                    )}{" "}
-                    / {contextLimit.toLocaleString("vi-VN")}
-                  </span>
+        <SidebarFooter className="p-3">
+          <div className="rounded-2xl border border-white/8 bg-white/[.025] group-data-[collapsible=icon]:border-transparent group-data-[collapsible=icon]:bg-transparent">
+            <div className="itis-sidebar-reveal itis-sidebar-label">
+              <div className="min-h-0 overflow-hidden">
+                <div className="px-3 pb-2 pt-3">
+                  <div className="mb-2 flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">
+                      {t("Cycle", "Chu kỳ")} {account?.user.resetWindowHours ?? 5} {t("hours", "giờ")}
+                    </span>
+                    <span className="font-mono text-primary">
+                      {account?.usage.unlimited
+                        ? "∞"
+                        : (account?.usage.remaining ?? 0).toLocaleString("vi-VN")}
+                    </span>
+                  </div>
+                  <Progress
+                    value={
+                      account?.usage.unlimited
+                        ? 0
+                        : Math.min(
+                            100,
+                            ((account?.usage.used ?? 0) /
+                              Math.max(1, account?.usage.limit ?? 1)) *
+                              100,
+                          )
+                    }
+                    className="h-1.5 bg-white/8 [&>div]:bg-primary"
+                  />
+                  {conversationId && (
+                    <div className="mt-3">
+                      <div className="mb-1.5 flex items-center justify-between text-[11px]">
+                        <span className="text-muted-foreground">{t("Chat context", "Context chat")}</span>
+                        <span
+                          className={`font-mono ${contextPercent >= 90 ? "text-amber-300" : "text-foreground"}`}
+                        >
+                          {(activeConversation?.contextTokens ?? 0).toLocaleString(
+                            "vi-VN",
+                          )}{" "}
+                          / {contextLimit.toLocaleString("vi-VN")}
+                        </span>
+                      </div>
+                      <Progress
+                        value={contextPercent}
+                        className={`h-1.5 bg-white/8 ${contextPercent >= 90 ? "[&>div]:bg-amber-400" : "[&>div]:bg-[#7aa2ff]"}`}
+                      />
+                    </div>
+                  )}
                 </div>
-                <Progress
-                  value={contextPercent}
-                  className={`h-1.5 bg-white/8 ${contextPercent >= 90 ? "[&>div]:bg-amber-400" : "[&>div]:bg-[#7aa2ff]"}`}
-                />
               </div>
-            )}
+            </div>
             <button
               onClick={() => navigate("account")}
-              className="mt-3 flex w-full items-center gap-2 rounded-xl text-left hover:bg-white/[.045] group-data-[collapsible=icon]:mt-0 group-data-[collapsible=icon]:justify-center"
+              className="flex w-full items-center gap-2 overflow-hidden rounded-xl px-[3px] py-1 text-left hover:bg-white/[.045]"
               title={t("My account", "Tài khoản của tôi")}
             >
               {avatarUrl ? (
                 <img
                   src={avatarUrl}
                   alt=""
-                  className="size-8 rounded-full object-cover"
+                  className="size-8 shrink-0 rounded-full object-cover"
                 />
               ) : (
-                <div className="grid size-8 place-items-center rounded-full bg-gradient-to-br from-[#b8ff6b] to-[#4dd7c3] text-xs font-bold text-[#091005]">
+                <div className="grid size-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#b8ff6b] to-[#4dd7c3] text-xs font-bold text-[#091005]">
                   {initials(displayName)}
                 </div>
               )}
-              <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+              <div className="itis-sidebar-label min-w-0 flex-1 whitespace-nowrap">
                 <div className="truncate text-sm font-medium">
                   {displayName}
                 </div>
@@ -1236,7 +1266,7 @@ export function ItisWorkspace({
                     : t("Loading", "Đang tải")}
                 </div>
               </div>
-              <Settings2 className="size-4 text-muted-foreground group-data-[collapsible=icon]:hidden" />
+              <Settings2 className="itis-sidebar-label mr-2 size-4 shrink-0 text-muted-foreground" />
             </button>
           </div>
         </SidebarFooter>
@@ -1255,7 +1285,7 @@ export function ItisWorkspace({
                     : view === "account"
                       ? t("My account", "Tài khoản của tôi")
                       : view === "usage"
-                        ? t("Tokens & cost", "Token & chi phí")
+                        ? t("Token usage", "Mức sử dụng token")
                         : "Admin Console"}
               </h1>
               <span className="rounded-full border border-[#b8ff6b]/20 bg-[#b8ff6b]/8 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
@@ -1268,7 +1298,7 @@ export function ItisWorkspace({
                 : view === "images"
                   ? t("Create, edit, and save images privately for this account", "Tạo, chỉnh sửa và lưu ảnh riêng theo tài khoản")
                   : view === "account"
-                    ? t("Profile, quota, and personal cost", "Hồ sơ, quota và chi phí cá nhân")
+                    ? t("Profile and token usage", "Hồ sơ và mức sử dụng token")
                     : view === "usage"
                       ? t("Real usage data for this account", "Dữ liệu usage thật của tài khoản")
                       : t("Configuration is stored in PostgreSQL", "Cấu hình được lưu trong PostgreSQL")}
@@ -1336,9 +1366,6 @@ export function ItisWorkspace({
             branchFromMessage={branchFromMessage}
             truncateMessages={(index) => setMessages((current) => current.slice(0, index))}
             selectedModel={selectedModel}
-            webSearchEnabled={webSearchEnabled}
-            setWebSearchEnabled={setWebSearchEnabled}
-            webSearchAvailable={webSearchAvailable}
             attachedFiles={attachedFiles}
             setAttachedFiles={setAttachedFiles}
             fileRef={fileRef}
@@ -1389,15 +1416,15 @@ function NavItem({
   label: string;
 }) {
   return (
-    <SidebarMenuItem className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center">
+    <SidebarMenuItem>
       <SidebarMenuButton
         isActive={active}
         onClick={onClick}
         tooltip={label}
-        className="h-10 rounded-xl group-data-[collapsible=icon]:mx-auto"
+        className="itis-sidebar-nav h-10 rounded-xl px-3 group-data-[collapsible=icon]:h-10! group-data-[collapsible=icon]:w-full! group-data-[collapsible=icon]:p-3!"
       >
         <Icon />
-        <span>{label}</span>
+        <span className="itis-sidebar-label">{label}</span>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
@@ -1408,7 +1435,7 @@ function AutoExpandSidebar({ children }: { children: React.ReactNode }) {
   return (
     <Sidebar
       collapsible="icon"
-      className={`border-r border-white/8 ${state === "collapsed" ? "cursor-e-resize" : ""}`}
+      className={`itis-sidebar border-r border-white/8 ${state === "collapsed" ? "cursor-e-resize" : ""}`}
       onClickCapture={(event) => {
         if (state !== "collapsed" || isMobile) return;
         event.preventDefault();
@@ -1437,9 +1464,6 @@ function ChatView({
   exportAnswer,
   truncateMessages,
   selectedModel,
-  webSearchEnabled,
-  setWebSearchEnabled,
-  webSearchAvailable,
   attachedFiles,
   setAttachedFiles,
   fileRef,
@@ -1460,9 +1484,6 @@ function ChatView({
   branchFromMessage: (messageId: string, messageIndex: number, content: string) => Promise<void>;
   truncateMessages: (index: number) => void;
   selectedModel: string;
-  webSearchEnabled: boolean;
-  setWebSearchEnabled: (value: boolean) => void;
-  webSearchAvailable: boolean;
   attachedFiles: File[];
   setAttachedFiles: (value: File[] | ((current: File[]) => File[])) => void;
   fileRef: React.RefObject<HTMLInputElement | null>;
@@ -1934,19 +1955,6 @@ function ChatView({
                 <div title={selectedModel} aria-label={selectedModel} className="hidden size-8 shrink-0 place-items-center rounded-full text-muted-foreground lg:grid">
                   <Cpu className="size-3.5 text-primary" />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                  disabled={!webSearchAvailable || sending}
-                  aria-pressed={webSearchEnabled}
-                  aria-label={t("Always search the web for this message", "Luôn tra cứu web cho tin nhắn này")}
-                  title={webSearchAvailable
-                    ? t("iTis searches automatically when needed. Click to request web search for this message.", "iTis tự tra cứu khi cần. Bấm để yêu cầu tra cứu web cho tin nhắn này.")
-                    : t("Web search requires the OpenAI environment", "Tìm kiếm web cần môi trường OpenAI")}
-                  className={`pointer-events-auto grid size-9 shrink-0 place-items-center rounded-full text-xs transition disabled:cursor-not-allowed disabled:opacity-35 ${webSearchEnabled ? "bg-sky-400/15 text-sky-300 ring-1 ring-sky-300/30" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"}`}
-                >
-                  <Globe2 className="size-4" />
-                </button>
                 <button
                   type="button"
                   onClick={() => void toggleVoiceInput()}
@@ -3148,7 +3156,7 @@ function UsageView({
             {embedded ? t("Usage", "Mức sử dụng") : t("Your account", "Tài khoản của bạn")}
           </p>
           <h2 className="mt-2 text-3xl font-semibold tracking-[-.04em]">
-            {t("Actual tokens and cost", "Token và chi phí thực tế")}
+            {t("Token usage", "Mức sử dụng token")}
           </h2>
         </div>
         <div className="rounded-xl border border-[#b8ff6b]/20 bg-[#b8ff6b]/7 px-3 py-2 text-sm capitalize text-primary">
@@ -3156,7 +3164,7 @@ function UsageView({
           {account?.user.resetWindowHours ?? 5} {t("hours", "giờ")}
         </div>
       </div>
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-3xl border border-white/8 bg-card p-6 md:p-7">
           <div className="flex items-start justify-between">
             <div>
@@ -3208,13 +3216,7 @@ function UsageView({
             <Coins className="size-5 text-[#7aa2ff]" />
           </div>
           <div className="metric-number mt-4 text-3xl font-semibold">
-            {(account?.usage.totalUsed ?? 0).toLocaleString(numberLocale)}{" "}
-            <span className="text-base font-normal text-muted-foreground">
-              /{" "}
-              {account?.usage.totalUnlimited
-                ? "∞"
-                : (account?.usage.totalLimit ?? 0).toLocaleString(numberLocale)}
-            </span>
+            {(account?.usage.totalLimit ?? 0).toLocaleString(numberLocale)}
           </div>
           <Progress
             value={
@@ -3230,6 +3232,9 @@ function UsageView({
             className="mt-6 h-2 bg-white/8 [&>div]:bg-[#7aa2ff]"
           />
           <div className="mt-3 text-xs text-muted-foreground">
+            {t("Used", "Đã dùng")} · {(account?.usage.totalUsed ?? 0).toLocaleString(numberLocale)}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
             {t("Remaining:", "Còn lại:")}{" "}
             <span className="font-semibold text-[#9cb8ff]">
               {account?.usage.totalUnlimited
@@ -3237,24 +3242,6 @@ function UsageView({
                 : (account?.usage.totalRemaining ?? 0).toLocaleString(numberLocale)}
             </span>{" "}
             · {t("Does not reset automatically", "Không tự reset")}
-          </div>
-        </section>
-        <section className="rounded-3xl border border-white/8 bg-card p-6">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              {t("Total recorded OpenAI cost", "Tổng chi phí OpenAI ghi nhận")}
-            </span>
-            <WalletCards className="size-5 text-[#63e6d4]" />
-          </div>
-          <div className="metric-number mt-4 text-4xl font-semibold">
-            ${(account?.usage.lifetimeCostUsd ?? 0).toFixed(4)}
-          </div>
-          <p className="mt-3 text-xs leading-5 text-muted-foreground">
-            {t("Model", "Model")}: ${(account?.usage.lifetimeModelCostUsd??0).toFixed(4)} · {t("Tools (estimated)", "Công cụ (ước tính)")}: ${(account?.usage.lifetimeToolCostUsd??0).toFixed(4)}
-            <br />{t("Cached input this cycle", "Input cache trong chu kỳ")}: {(account?.usage.cachedTokens??0).toLocaleString(numberLocale)} · {t("Reasoning tokens", "Token suy luận")}: {(account?.usage.reasoningTokens??0).toLocaleString(numberLocale)}
-          </p>
-          <div className="mt-2 text-sm text-muted-foreground">
-            {t("Calculated from actual usage", "Tính từ toàn bộ usage thực tế")}
           </div>
         </section>
       </div>
@@ -3879,10 +3866,10 @@ function AdminView({
             </div>
             <div className="flex items-center gap-2 text-xs">
               <span className="rounded-xl border border-primary/20 bg-primary/[.06] px-3 py-2 text-primary">
-                {t(`${members.filter((member) => member.isActive).length} active`, `${members.filter((member) => member.isActive).length} hoạt động`)}
+                {t(`${members.filter((member) => member.isActive && !member.accessExpired).length} active`, `${members.filter((member) => member.isActive && !member.accessExpired).length} hoạt động`)}
               </span>
               <span className="rounded-xl border border-white/10 px-3 py-2 text-muted-foreground">
-                {t(`${members.filter((member) => !member.isActive).length} disabled`, `${members.filter((member) => !member.isActive).length} đã ẩn`)}
+                {t(`${members.filter((member) => !member.isActive || member.accessExpired).length} locked`, `${members.filter((member) => !member.isActive || member.accessExpired).length} đã khóa`)}
               </span>
             </div>
           </div>
@@ -3895,7 +3882,7 @@ function AdminView({
                     <th className="w-[15%] px-3 py-3 font-medium">{t("Status", "Trạng thái")}</th>
                     <th className="w-[16%] px-3 py-3 font-medium">{t("Image Studio", "Studio ảnh")}</th>
                     <th className="w-[25%] px-3 py-3 font-medium">
-                      {t("Usage & cost", "Sử dụng & chi phí")}
+                      {t("Token budget", "Ngân sách token")}
                     </th>
                     <th className="w-[12%] px-3 py-3 font-medium">{t("Unlimited", "Vô hạn")}</th>
                     <th className="w-[8%] px-4 py-3 text-right font-medium">
@@ -3905,7 +3892,7 @@ function AdminView({
                 </thead>
                 <tbody>
                   {members.map((member) => (
-                    <tr key={member.id} className={`border-t border-white/6 transition-opacity ${member.isActive ? "" : "opacity-55"}`}>
+                    <tr key={member.id} className={`border-t border-white/6 transition-opacity ${member.isActive && !member.accessExpired ? "" : "opacity-55"}`}>
                       <td className="px-4 py-3">
                         <div className="flex min-w-0 items-center gap-2">
                           <div className="min-w-0">
@@ -3914,6 +3901,9 @@ function AdminView({
                               {member.email}
                             </div>
                             <p className="mt-1 text-[10px] text-muted-foreground" title={member.lastSeenAt ? new Date(member.lastSeenAt).toLocaleString(numberLocale) : ""}>{member.lastSeenAt ? `${t("Last active", "Hoạt động cuối")}: ${new Date(member.lastSeenAt).toLocaleString(numberLocale)}` : t("Not signed in yet", "Chưa đăng nhập")}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {t("Total activity", "Tổng hoạt động")} · <span className="font-medium text-foreground">{(member.activeSeconds / 3600).toLocaleString(numberLocale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} {t("h", "giờ")}</span>
+                            </p>
                           </div>
                           <span className="shrink-0 rounded-md bg-white/5 px-2 py-1 text-[10px] capitalize">
                             {member.role}
@@ -3934,12 +3924,17 @@ function AdminView({
                               : undefined}
                             className="shrink-0 scale-90 data-[state=checked]:bg-primary"
                           />
-                          <span className={`truncate text-[11px] font-medium ${member.isActive ? "text-primary" : "text-red-300"}`}>
-                            {member.isActive
+                          <span className={`truncate text-[11px] font-medium ${member.isActive && !member.accessExpired ? "text-primary" : "text-red-300"}`}>
+                            {member.accessExpired ? t("Expired", "Hết hạn") : member.isActive
                               ? t("Active", "Đang hoạt động")
                               : t("Disabled", "Đã ẩn")}
                           </span>
                         </label>
+                        {member.accessExpiresAt && (
+                          <p className="mt-1 text-[10px] text-muted-foreground">
+                            {t("Access until", "Hạn sử dụng")} · {new Date(member.accessExpiresAt).toLocaleString(numberLocale, { timeZone: "Asia/Ho_Chi_Minh", dateStyle: "short", timeStyle: "short" })}
+                          </p>
+                        )}
                       </td>
                       <td className="px-3 py-3">
                         <label className="flex items-center gap-2">
@@ -3964,21 +3959,10 @@ function AdminView({
                         </label>
                       </td>
                       <td className="px-3 py-3">
-                        <div className="truncate font-mono text-[11px] font-semibold">
-                          {member.usedTokens.toLocaleString(numberLocale)} /{" "}
-                          {member.totalUnlimited
-                            ? "∞"
-                            : member.totalTokenLimit.toLocaleString(numberLocale)}
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
-                          <span>
-                          {t("Cycle:", "Chu kỳ:")}{" "}
-                          {member.unlimited
-                            ? "∞"
-                            : member.tokenLimit.toLocaleString(numberLocale)}
-                          </span>
-                          <span className="font-mono text-foreground/80">${member.costUsd.toFixed(4)}</span>
-                        </div>
+                        <MemberTokenBalances member={member} />
+                        <p className="mt-1 text-[10px] text-muted-foreground">
+                          {t("Cycle", "Chu kỳ")} · {member.unlimited ? "∞" : member.tokenLimit.toLocaleString(numberLocale)}
+                        </p>
                       </td>
                       <td className="px-3 py-3">
                         <div className="grid gap-1 text-[10px]">
@@ -4248,6 +4232,27 @@ async function patchUser(id: string, values: Record<string, unknown>) {
   });
 }
 
+function MemberTokenBalances({ member }: { member: Member }) {
+  const { t, locale } = useLanguage();
+  const format = new Intl.NumberFormat(locale === "vi" ? "vi-VN" : "en-US");
+  return (
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-[11px]">
+      <dt className="text-muted-foreground">{t("Allocated", "Đã cấp")}</dt>
+      <dd className="break-all font-mono">{format.format(member.totalTokenLimit)}</dd>
+      <dt className="text-muted-foreground">{t("Used", "Đã dùng")}</dt>
+      <dd className="break-all font-mono">{format.format(member.usedTokens)}</dd>
+      <dt className="text-muted-foreground">{t("Remaining", "Còn lại")}</dt>
+      <dd className="break-all font-mono text-primary">
+        {member.totalUnlimited ? "∞" : format.format(Math.max(0, member.totalTokenLimit - member.usedTokens))}
+      </dd>
+    </dl>
+  );
+}
+
+function expiryInputValue(expiresAt: string | null) {
+  return expiresAt ? new Date(new Date(expiresAt).getTime() + 7 * 60 * 60_000).toISOString().slice(0, 16) : "";
+}
+
 function UserDialog({
   member,
   reload,
@@ -4262,9 +4267,9 @@ function UserDialog({
   const [role, setRole] = useState(member.role);
   const [tokenLimit, setTokenLimit] = useState(String(member.tokenLimit));
   const [unlimited, setUnlimited] = useState(member.unlimited);
-  const [totalTokenLimit, setTotalTokenLimit] = useState(
-    String(member.totalTokenLimit),
-  );
+  const [additionalTokens, setAdditionalTokens] = useState("");
+  const grantRef = useRef<{ id: string; amount: number } | null>(null);
+  const [accessDeadline, setAccessDeadline] = useState(expiryInputValue(member.accessExpiresAt));
   const [totalUnlimited, setTotalUnlimited] = useState(member.totalUnlimited);
   const [storageGiB, setStorageGiB] = useState(String(member.storageLimitBytes / 1024 ** 3));
   const [resetHours, setResetHours] = useState(String(member.resetWindowHours));
@@ -4280,7 +4285,8 @@ function UserDialog({
     setRole(member.role);
     setTokenLimit(String(member.tokenLimit));
     setUnlimited(member.unlimited);
-    setTotalTokenLimit(String(member.totalTokenLimit));
+    setAdditionalTokens(grantRef.current ? String(grantRef.current.amount) : "");
+    setAccessDeadline(expiryInputValue(member.accessExpiresAt));
     setTotalUnlimited(member.totalUnlimited);
     setStorageGiB(String(member.storageLimitBytes / 1024 ** 3));
     setResetHours(String(member.resetWindowHours));
@@ -4292,46 +4298,63 @@ function UserDialog({
     setError("");
   }
   async function save() {
-    setSaving(true);
     setError("");
-    const response = await patchUser(member.id, {
-      name,
-      email,
-      role,
-      tokenLimit: Number(tokenLimit),
-      unlimited,
-      totalTokenLimit: Number(totalTokenLimit),
-      totalUnlimited,
-      storageLimitBytes: Math.round(Number(storageGiB) * 1024 ** 3),
-      resetWindowHours: Number(resetHours),
-      isActive,
-      allowMultipleSessions,
-      memoryEnabled,
-      autoMemory,
-    });
-    if (!response.ok) {
-      const data = (await response.json()) as { error?: string };
-      setError(data.error || t("Unable to save account.", "Không thể lưu tài khoản."));
-      setSaving(false);
+    const amount = Number(additionalTokens);
+    if (!Number.isSafeInteger(amount) || amount < 0 || amount > 100_000_000_000) {
+      setError(t("Enter a valid whole number of tokens.", "Hãy nhập số nguyên token hợp lệ."));
       return;
     }
-    if (avatarFile) {
-      const form = new FormData();
-      form.set("avatar", avatarFile);
-      const avatarResponse = await fetch(
-        `/api/admin/users/${member.id}/avatar`,
-        { method: "POST", body: form },
-      );
-      if (!avatarResponse.ok) {
-        const data = (await avatarResponse.json()) as { error?: string };
-        setError(data.error || t("Unable to upload avatar.", "Không thể tải ảnh đại diện."));
-        setSaving(false);
+    if (amount > 0 && grantRef.current?.amount !== amount) {
+      grantRef.current = { id: crypto.randomUUID(), amount };
+    }
+    const deadlineChanged = accessDeadline !== expiryInputValue(member.accessExpiresAt);
+    const accessExpiresAt = role === "admin" || !accessDeadline ? null : `${accessDeadline}:00+07:00`;
+    setSaving(true);
+    try {
+      const response = await patchUser(member.id, {
+        name,
+        email,
+        role,
+        tokenLimit: Number(tokenLimit),
+        unlimited,
+        ...(amount > 0 ? { tokenGrant: grantRef.current } : {}),
+        ...(deadlineChanged || (role === "admin" && member.accessExpiresAt) ? { accessExpiresAt } : {}),
+        totalUnlimited,
+        storageLimitBytes: Math.round(Number(storageGiB) * 1024 ** 3),
+        resetWindowHours: Number(resetHours),
+        isActive,
+        allowMultipleSessions,
+        memoryEnabled,
+        autoMemory,
+      });
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string };
+        setError(data.error || t("Unable to save account.", "Không thể lưu tài khoản."));
         return;
       }
+      grantRef.current = null;
+      setAdditionalTokens("");
+      if (avatarFile) {
+        const form = new FormData();
+        form.set("avatar", avatarFile);
+        const avatarResponse = await fetch(
+          `/api/admin/users/${member.id}/avatar`,
+          { method: "POST", body: form },
+        );
+        if (!avatarResponse.ok) {
+          const data = (await avatarResponse.json()) as { error?: string };
+          setError(data.error || t("Unable to upload avatar.", "Không thể tải ảnh đại diện."));
+          await reload();
+          return;
+        }
+      }
+      await reload();
+      setAvatarFile(null);
+    } catch {
+      setError(t("Unable to confirm the save. Retry to check the result.", "Chưa xác nhận được kết quả lưu. Hãy thử lại."));
+    } finally {
+      setSaving(false);
     }
-    await reload();
-    setAvatarFile(null);
-    setSaving(false);
   }
   return (
     <Dialog onOpenChange={(open) => { if (open) syncDraftFromMember(); }}>
@@ -4445,14 +4468,18 @@ function UserDialog({
             <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-[#9cb8ff]">
               {t("Total token budget", "Ngân sách token tổng")}
             </div>
-            <label className="grid gap-2 text-sm">
-              {t("Total tokens allocated", "Tổng token admin cấp")}
+            <MemberTokenBalances member={member} />
+            <label className="mt-3 grid gap-2 text-sm">
+              {t("Add tokens", "Cấp thêm token")}
               <input
-                value={totalTokenLimit}
-                disabled={totalUnlimited}
-                onChange={(event) => setTotalTokenLimit(event.target.value)}
+                value={additionalTokens}
+                onChange={(event) => setAdditionalTokens(event.target.value)}
                 type="number"
-                className="h-10 rounded-lg border border-white/10 bg-white/[.03] px-3 disabled:opacity-35"
+                min={0}
+                max={100_000_000_000}
+                step={1}
+                placeholder="0"
+                className="h-10 rounded-lg border border-white/10 bg-white/[.03] px-3"
               />
             </label>
             <label className="mt-3 flex items-center justify-between text-sm">
@@ -4493,6 +4520,21 @@ function UserDialog({
               </span>
             </span>
             <Switch checked={isActive} onCheckedChange={setIsActive} className="data-[state=checked]:bg-primary" />
+          </label>
+          <label className="grid gap-2 rounded-xl border border-white/8 bg-white/[.02] p-4 text-sm">
+            {t("Access deadline (UTC+7)", "Khóa tài khoản lúc (giờ Việt Nam)")}
+            <input
+              type="datetime-local"
+              value={role === "admin" ? "" : accessDeadline}
+              onChange={(event) => setAccessDeadline(event.target.value)}
+              disabled={role === "admin"}
+              className="h-10 min-w-0 rounded-lg border border-white/10 bg-white/[.03] px-3 [color-scheme:dark] disabled:opacity-40"
+            />
+            <span className="text-xs text-muted-foreground">
+              {role === "admin"
+                ? t("Administrator access has no deadline.", "Tài khoản quản trị không đặt hạn.")
+                : t("Clear the date to remove the deadline. Existing sessions lose access at expiry.", "Xóa ngày giờ để bỏ hạn. Đến hạn, phiên đang đăng nhập cũng mất quyền truy cập.")}
+            </span>
           </label>
           <div className="min-w-0 rounded-xl border border-white/8 bg-white/[.02] p-4">
             <p className="text-sm font-medium">{t("Account security", "Bảo mật tài khoản")}</p>
@@ -4600,8 +4642,8 @@ function DeleteUserDialog({
             <li>• {t("Personal memories, sessions and profile/avatar", "Bộ nhớ cá nhân, phiên đăng nhập và hồ sơ/avatar")}</li>
             <li>• {t("Generated images and image files", "Lịch sử cùng file ảnh đã tạo")}</li>
             <li>• {t(
-              `${member.usedTokens.toLocaleString(numberLocale)} recorded tokens and $${member.costUsd.toFixed(4)} recorded cost`,
-              `${member.usedTokens.toLocaleString(numberLocale)} token và $${member.costUsd.toFixed(4)} chi phí đã ghi nhận`,
+              `${member.usedTokens.toLocaleString(numberLocale)} recorded tokens`,
+              `${member.usedTokens.toLocaleString(numberLocale)} token đã ghi nhận`,
             )}</li>
           </ul>
         </div>

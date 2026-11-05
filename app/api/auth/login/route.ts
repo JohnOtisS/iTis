@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
-import { createSession } from "@/lib/auth";
+import { accountAccessExpired, createSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -19,6 +19,11 @@ export async function POST(request: Request) {
   const [user] = await getDb().select().from(users).where(eq(users.email, email)).limit(1);
   if (!user || !user.isActive || !(await bcrypt.compare(body.password, user.passwordHash))) {
     return NextResponse.json({ error: "Incorrect email or password." }, { status: 401 });
+  }
+  if (accountAccessExpired(user.accessExpiresAt)) {
+    return NextResponse.json({
+      error: user.locale === "vi" ? "Tài khoản đã hết hạn. Hãy liên hệ quản trị viên để gia hạn." : "This account has expired. Contact your administrator to renew access.",
+    }, { status: 403 });
   }
 
   if(!await createSession(user.id,user.passwordHash))return NextResponse.json({error:"Account or password changed. Please sign in again."},{status:401});

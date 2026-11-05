@@ -49,6 +49,45 @@ button,a,input,textarea{transition:color .18s ease,background-color .18s ease,bo
 }
 @media (prefers-reduced-motion:reduce){.neon-chat-composer::before{animation:none}}
 
+@media (min-width: 48rem) {
+  .itis-workspace-shell [data-slot="sidebar"] {
+    --itis-sidebar-motion: 260ms cubic-bezier(.2, .75, .25, 1);
+  }
+  .itis-workspace-shell [data-slot="sidebar-gap"],
+  .itis-workspace-shell .itis-sidebar {
+    transition: width var(--itis-sidebar-motion);
+  }
+  .itis-sidebar [data-slot="sidebar-inner"] {
+    overflow: hidden;
+  }
+  .itis-sidebar .itis-sidebar-label {
+    transition: opacity 150ms ease 70ms, visibility 0s;
+  }
+  [data-collapsible="icon"] .itis-sidebar .itis-sidebar-label {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 110ms ease, visibility 0s 110ms;
+  }
+  .itis-sidebar .itis-sidebar-reveal {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows var(--itis-sidebar-motion), opacity 150ms ease 70ms, visibility 0s;
+  }
+  [data-collapsible="icon"] .itis-sidebar .itis-sidebar-reveal {
+    grid-template-rows: 0fr;
+    transition: grid-template-rows var(--itis-sidebar-motion), opacity 110ms ease, visibility 0s 110ms;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .itis-workspace-shell [data-slot="sidebar-gap"],
+  .itis-workspace-shell .itis-sidebar,
+  .itis-sidebar .itis-sidebar-label,
+  [data-collapsible="icon"] .itis-sidebar .itis-sidebar-label {
+    transition: none;
+  }
+}
+
 .itis-logo{display:inline-grid;flex:none;place-items:center;filter:drop-shadow(0 0 10px rgba(99,230,212,.12));transition:filter .25s ease,transform .25s ease}.itis-logo svg{display:block;width:100%;height:100%;overflow:visible}.itis-logo:hover{filter:drop-shadow(0 0 12px rgba(184,255,107,.28));transform:translateY(-1px)}
 
 /* iTis access portal */
