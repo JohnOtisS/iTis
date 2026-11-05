@@ -1,6 +1,7 @@
+import {documentRequestText} from "@/lib/document-request";
 // Deterministic intent resolution. Ambiguous sources must never trigger a paid guess.
 export function normalizedReference(value: string) {
-  return value.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g,"d").replace(/Đ/g,"D").toLowerCase().replace(/[_-]+/g," ").replace(/\s+/g," ").trim();
+  return documentRequestText(value).replace(/[_-]+/g," ").replace(/\s+/g," ").trim();
 }
 export function documentKind(value: string) {
   const text=normalizedReference(value);

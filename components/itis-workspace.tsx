@@ -1,4 +1,6 @@
 "use client";
+import {readChatEvents} from "@/lib/chat-stream";
+import {taskFailureText} from "@/lib/task-failure";
 
 /* Native img is intentional for authenticated files, blob previews, and user-uploaded assets. */
 /* eslint-disable @next/next/no-img-element */
@@ -367,6 +369,7 @@ export function ItisWorkspace({
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [taskStage, setTaskStage] = useState("");
+  const [taskFailure,setTaskFailure]=useState<{conversationId:string;message:string}|null>(null);
   const [retryableTask, setRetryableTask] = useState<{prompt:string;conversationId:string}|null>(null);
   const activeJobRef = useRef<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -781,10 +784,10 @@ export function ItisWorkspace({
     async function recover() {
       const response=await fetch(`/api/chat/jobs?conversationId=${conversationId}`,{cache:"no-store"});
       if(!response.ok||disposed)return;
-      const data=await response.json() as {jobs:Array<{id:string;status:string;sourcePrompt?:string|null}>};
+      const data=await response.json() as {jobs:Array<{id:string;status:string;error?:string|null;sourcePrompt?:string|null}>};
       const active=data.jobs.find(job=>job.status==="running");
       if(disposed)return;
-      if(!active){const failed=data.jobs.find(job=>["failed","cancelled"].includes(job.status));if(failed?.sourcePrompt)setRetryableTask({prompt:failed.sourcePrompt,conversationId:conversationId!});return;}
+      if(!active){const latest=data.jobs[0];if(latest&&["failed","cancelled"].includes(latest.status)){if(latest.sourcePrompt)setRetryableTask({prompt:latest.sourcePrompt,conversationId:conversationId!});setTaskFailure({conversationId:conversationId!,message:taskFailureText(latest.error||t("Task stopped.","Tác vụ đã dừng."),locale==="vi")});}else{setTaskFailure(null);setRetryableTask(null);}return;}
       activeJobRef.current=active.id;setSending(true);
       async function poll(){
         try {
@@ -793,7 +796,7 @@ export function ItisWorkspace({
           if(disposed)return;
           if(data.job?.status==="running"){setTaskStage(data.job.stage);timer=setTimeout(()=>void poll(),1500);return;}
           setSending(false);setTaskStage("");activeJobRef.current=null;
-          if(data.job?.error)setDataError(data.job.error);
+          if(data.job?.error){setTaskFailure({conversationId:conversationId!,message:taskFailureText(data.job.error,locale==="vi")});if(active!.sourcePrompt)setRetryableTask({prompt:active!.sourcePrompt,conversationId:conversationId!});}
           await loadConversation(conversationId!,false);await loadData();
         }catch{if(!disposed)timer=setTimeout(()=>void poll(),3000);}
       }
@@ -813,7 +816,7 @@ export function ItisWorkspace({
     const invalidUpload=uploadError(options.ignoreAttachment?[]:attachedFiles,account?.system.uploadLimits??defaultUploadLimits,locale==="vi");
     if(invalidUpload){setDataError(invalidUpload);return;}
     setTaskStage("");
-    setRetryableTask(null);
+    setRetryableTask(null);setTaskFailure(null);
     const displayUser = options.displayUser !== false;
     const pendingAttachments = options.ignoreAttachment ? [] : attachedFiles.map((file) => ({
       name: file.name,
@@ -869,17 +872,7 @@ export function ItisWorkspace({
           content: "",
           createdAt: new Date().toISOString(),
         }]);
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        while (true) {
-          const { done, value } = await reader.read();
-          buffer += decoder.decode(value, { stream: !done });
-          const lines = buffer.split(/\r?\n/);
-          buffer = lines.pop() ?? "";
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            const event = JSON.parse(line) as {
+        type ChatEvent = {
               type: "meta" | "delta" | "done" | "error" | "progress";
               jobId?: string;
               stage?: string;
@@ -891,7 +884,9 @@ export function ItisWorkspace({
               conversationId?: string;
               usage?: Partial<import("@/lib/task-usage").TaskUsage>;
               messageId?:string;
-            };
+        };
+
+        for await (const event of readChatEvents<ChatEvent>(response.body)) {
             if (event.jobId) activeJobRef.current=event.jobId;
             if (event.type === "meta" && event.model) setMessages(current=>current.map(item=>item.id===temporaryId?{...item,model:shortModelLabel(event.model)}:item));
             if (event.conversationId) retryConversationId=event.conversationId;
@@ -922,8 +917,6 @@ export function ItisWorkspace({
               }
             }
             if (event.type === "error") throw new Error(event.error || t("The AI service is unavailable.", "Dịch vụ AI không khả dụng."));
-          }
-          if (done) break;
         }
         setAttachedFiles([]);
         setWebSearchEnabled(false);
@@ -980,6 +973,7 @@ export function ItisWorkspace({
         }
         return;
       }
+      if(retryConversationId)setTaskFailure({conversationId:retryConversationId,message:taskFailureText(error instanceof Error?error.message:t("Request failed.","Gửi yêu cầu thất bại."),locale==="vi")});
       if(streamedMessageId)setMessages(current=>current.filter(item=>item.id!==streamedMessageId||Boolean(item.content)));
       setMessages((current) => [
         ...current,
@@ -1305,6 +1299,7 @@ export function ItisWorkspace({
             send={send}
             sending={sending || loadingConversation}
             taskStage={taskStage}
+            taskFailure={taskFailure?.conversationId===conversationId?taskFailure.message:undefined}
             retryTask={retryableTask && retryableTask.conversationId===conversationId ? ()=>void send(retryableTask.prompt,{displayUser:false,regenerate:true,conversationIdOverride:retryableTask.conversationId,ignoreAttachment:true}) : undefined}
             stopGenerating={stopGenerating}
             exportAnswer={exportAnswer}
@@ -1406,6 +1401,7 @@ function ChatView({
   sending,
   taskStage,
   retryTask,
+  taskFailure,
   stopGenerating,
   branchFromMessage,
   exportAnswer,
@@ -1427,6 +1423,7 @@ function ChatView({
   send: (value?: string, options?: { displayUser?: boolean; regenerate?: boolean; conversationIdOverride?: string; ignoreAttachment?: boolean }) => void;
   sending: boolean;
   taskStage: string;
+  taskFailure?: string;
   retryTask?: () => void;
   stopGenerating: () => void;
   exportAnswer: (messageId:string)=>Promise<void>;
@@ -1787,6 +1784,7 @@ function ChatView({
                 {taskStage || t("iTis is working…", "iTis đang xử lý…")}
               </div>
             )}
+            {!sending && taskFailure && <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm leading-6 text-destructive">{taskFailure}</p>}
             {!sending && retryTask && <button onClick={retryTask} className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-2 text-sm text-primary hover:bg-primary/10">{t("Retry task · reuse saved files", "Thử lại · dùng tệp đã lưu")}</button>}
           </div>
         </div>

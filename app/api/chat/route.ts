@@ -1,3 +1,4 @@
+import {outputExtensions,needsFullDocumentReview} from "@/lib/document-request";
 import {getUploadLimits} from "@/lib/upload-limits";
 import {uploadError} from "@/lib/upload-policy";
 import {localArtifactAction} from "@/lib/local-artifacts";
@@ -71,12 +72,9 @@ function isWebSearchTask(prompt: string) {
   return /https?:\/\/|\b(search|browse|look\s*up|latest|today|news|fact[ -]?check)\b|\b(on|from|using|search(?: the)?)\s+(the\s+)?(web|internet|online)\b|\bcurrent\s+(president|ceo|price|version|status|weather|law|rules?|regulations?)\b|tìm kiếm|tra cứu|tìm trên (mạng|web)|trên mạng|trên web|mới nhất|hiện tại|hôm nay|tin tức|(?:nguồn|dẫn chứng|kiểm chứng|xác minh).{0,25}(?:web|internet|trên mạng)|\b(?:sources?|verify)\b.{0,25}\b(?:web|internet|online)\b/i.test(prompt);
 }
 
-function preferredArtifactExtensions(prompt: string) {
-  if (/powerpoint|pptx|slide|trình chiếu/i.test(prompt)) return new Set([".pptx"]);
-  if (/word|docx/i.test(prompt)) return new Set([".docx"]);
-  if (/excel|xlsx/i.test(prompt)) return new Set([".xlsx"]);
-  if (/\bpdf\b/i.test(prompt)) return new Set([".pdf"]);
-  return new Set([".pptx", ".docx", ".xlsx", ".pdf", ".csv", ".zip", ".png"]);
+function preferredArtifactExtensions(prompt:string){
+  const requested=outputExtensions(prompt);
+  return new Set(requested.length?requested:[".pptx",".docx",".xlsx",".pdf",".csv",".zip"]);
 }
 
 async function loadStoredAttachment(attachment: ChatAttachment) {
@@ -186,7 +184,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   // File delivery/export is deterministic and does not require an API key or AI quota.
   if(!attachments.length && !regenerate && localArtifactIntent(prompt)){
     if(!conversationId){const [created]=await getDb().insert(conversations).values({userId:user.id,title:makeTitle(prompt,user.locale)}).returning();conversationId=created.id;}
-    try{return NextResponse.json(await localArtifactAction({userId:user.id,conversationId,prompt,locale:user.locale}));}
+    try{const result=await localArtifactAction({userId:user.id,conversationId,prompt,locale:user.locale});if(result)return NextResponse.json(result);}
     catch(error){
       if(isStorageError(error))throw error;
       if(error instanceof Error&&error.message==="ARTIFACT_BUSY")return NextResponse.json({error:"Another file export is running in this chat. Please retry shortly."},{status:409});
@@ -327,7 +325,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   const rememberedContext=user.memoryEnabled?await retrieveDocumentMemory(user.id,prompt):{context:"",files:[] as ChatAttachment[]};
   const rememberedFileTask=needsDocumentOutput(prompt)||isDocumentEditFollowup(prompt,true)||needsComputation(prompt,true);
   const catalog = [...await documentCatalog(conversation.id),...(rememberedFileTask?rememberedContext.files:[])];
-  const referencesFiles = /file|tệp|tài liệu|dữ liệu|bảng|sheet|cột|dòng|đối chiếu|so sánh|tổng|số liệu|excel|pdf|docx|pptx|csv|xlsx|word|document|data|table|row|column|compare|total|continue|tiếp tục|làm tiếp|sửa|chỉnh|đổi|thay/i.test(prompt) || catalog.some(file=>prompt.toLowerCase().includes(file.name.toLowerCase()));
+  const referencesFiles = needsDocumentOutput(prompt) || /file|tệp|tài liệu|dữ liệu|bảng|sheet|cột|dòng|đối chiếu|so sánh|tổng|số liệu|excel|pdf|docx|pptx|csv|xlsx|word|document|data|table|row|column|compare|total|continue|tiếp tục|làm tiếp|sửa|chỉnh|đổi|thay/i.test(prompt) || catalog.some(file=>prompt.toLowerCase().includes(file.name.toLowerCase()));
   const selectedFiles = attachmentData.length ? [...inputAttachments,...selectDocuments(catalog.filter(file=>!inputAttachments.some(input=>input.url===file.url)),prompt).filter(file=>prompt.toLowerCase().includes(file.name.toLowerCase()))] : referencesFiles ? selectDocuments(catalog,prompt) : [];
   const shouldReuseFiles = attachmentData.length === 0 && selectedFiles.length > 0;
   const restoredAttachmentData = shouldReuseFiles
@@ -366,7 +364,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
 - Keep Markdown compact; use lists and tables only when they improve readability.`) + (memoryContext ? `\n\n${memoryContext}\n- Never reveal that another user has memories. Treat these memories as belonging only to the signed-in user.` : "");
 
   const artifactTask = needsDocumentOutput(prompt) || isDocumentEditFollowup(prompt,selectedFiles.length>0);
-  const computationTask = (selectedFiles.length>0 && /toàn bộ|tất cả|đầy đủ|full review|every (?:row|sheet|page)|exhaustive/i.test(prompt)) || needsComputation(prompt, selectedFiles.length>0) || (selectedFiles.some(file=>/\.(csv|xlsx|xls)$/i.test(file.name)) && /phân tích|analy|dữ liệu|data/i.test(prompt));
+  const computationTask = needsFullDocumentReview(prompt,selectedFiles.length) || needsComputation(prompt, selectedFiles.length>0) || (selectedFiles.some(file=>/\.(csv|xlsx|xls)$/i.test(file.name)) && /phân tích|analy|dữ liệu|data/i.test(prompt));
   const simpleWord=fastWordMode(prompt,selectedFiles,computationTask,webSearchTask);
   if (systemProvider === "openai" && (artifactTask || computationTask || selectedFiles.length>0 || webSearchTask)) {
     return startChatJob({userId:user.id,conversationId:conversation.id,sourceMessageId,prompt,systemPrompt:`${systemPrompt}\n\n${context.contextNote}`,history:history.map(({role,content})=>({role,content})),documents:selectedFiles,catalog,artifact:artifactTask,compute:computationTask,webSearch:webSearchTask,model:(!routerEnabled||(!simpleWord&&(artifactTask||computationTask||isComplexTask(prompt))))?"gpt-6.1-sol":"gpt-6-luna",locale:user.locale},Boolean(request.headers.get("accept")?.includes("application/x-ndjson")),request.signal);

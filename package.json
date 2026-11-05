@@ -25,7 +25,7 @@
     "storage:reconcile": "node --env-file=.env.local scripts/reconcile-storage.mjs",
     "test:storage": "node --env-file=.env.local scripts/test-storage.mjs",
     "data:health": "node scripts/data-health.mjs",
-    "test:unit": "tsx scripts/test-artifact-efficiency.ts && tsx scripts/test-pro-policy.ts && tsx scripts/test-word-fast.ts && tsx scripts/test-upload-policy.ts"
+    "test:unit": "tsx scripts/test-artifact-efficiency.ts && tsx scripts/test-pro-policy.ts && tsx scripts/test-word-fast.ts && tsx scripts/test-upload-policy.ts && tsx scripts/test-delivery-policy.ts"
   },
   "dependencies": {
     "fflate": "0.8.2",

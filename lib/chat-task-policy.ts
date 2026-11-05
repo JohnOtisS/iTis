@@ -1,21 +1,13 @@
+import {documentRequestText,outputExtensions} from "@/lib/document-request";
 export function needsComputation(prompt: string, hasDocuments = false) {
   return /\b(calculate|reconcile|variance|sum|formula|statistics|forecast|audit)\b|tính (?:tổng|toán|thuế|lãi)|công thức|đối chiếu|chênh lệch|thống kê|dự báo|kiểm toán/i.test(prompt)
     || (hasDocuments && /\b(vat|total|quantity|amount)\b|tổng|số lượng|thành tiền|doanh thu/i.test(prompt));
 }
 export function needsDocumentOutput(prompt: string) {
-  prompt = prompt.replace(/không\s+(?:cần\s+)?(?:xuất|tạo|render)\s+(?:file|tệp)|do not\s+(?:create|export|generate)\s+(?:any\s+)?files?/gi, "");
-  return /(chuyển|convert|xuất|export|render|tạo|làm|sửa|chỉnh|cập nhật|modify|edit|generate|create|make).{0,70}(file|tệp|pdf|word|docx|excel|xlsx|csv|powerpoint|pptx|báo cáo|report)|(file|tệp).{0,45}(pdf|word|docx|excel|xlsx|csv|powerpoint|pptx)/i.test(prompt);
+  prompt = documentRequestText(prompt).replace(/khong\s+(?:can\s+)?(?:xuat|tao|render)\s+(?:file|tep)|do not\s+(?:create|export|generate)\s+(?:any\s+)?files?/gi, "");
+  return /(chuyen|convert|xuat|export|render|tao|lam|sua|chinh|cap nhat|modify|edit|generate|create|make).{0,70}(file|tep|pdf|word|docx|excel|xlsx|csv|powerpoint|pptx|bao cao|report)|(file|tep).{0,45}(pdf|word|docx|excel|xlsx|csv|powerpoint|pptx)/i.test(prompt);
 }
-export function requestedExtensions(prompt: string) {
-  // Source formats are not output requirements (e.g. CSV -> four Office files).
-  prompt = prompt.replace(/(?:không|do not|don't)[^.!?\n]*(?:tải lại|upload|attach|đính kèm|xuất|export|tạo|create)[^.!?\n]*/gi, "");
-  const action = prompt.search(/tạo|create|generate|xuất|export|chuyển|convert|sửa|edit/i);
-  let target = action >= 0 ? prompt.slice(action) : prompt;
-  const conversion = target.match(/(?:sang|thành|\bto\b|into)\s+(?:(?:file|tệp|a|an|the)\s+)?(?:pdf|word|docx|excel|xlsx|csv|powerpoint|pptx)/i);
-  if (conversion?.index !== undefined) target = target.slice(conversion.index);
-  const map: Array<[string, RegExp]> = [[".xlsx",/xlsx|excel/i],[".docx",/docx|word/i],[".pptx",/pptx|powerpoint|slide/i],[".pdf",/\bpdf\b/i],[".csv",/\bcsv\b/i],[".zip",/\bzip\b/i]];
-  return map.filter(([,pattern]) => pattern.test(target)).map(([extension]) => extension);
-}
+export const requestedExtensions=outputExtensions;
 export function isImageGeneration(prompt: string) {
   return /(?:tạo|vẽ|render|generate|draw|create).{0,25}(?:hình ảnh|bức ảnh|bức tranh|chân dung|image|portrait|picture|illustration)/i.test(prompt)
     && !/pdf|docx|pptx|xlsx|slide|chart|biểu đồ|tài liệu/i.test(prompt);

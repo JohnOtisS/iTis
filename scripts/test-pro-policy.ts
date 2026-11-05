@@ -40,3 +40,5 @@ assert.match(extractedSheet,/sheet: Orders/);assert.match(extractedSheet,/A1: Al
 const excerpt=relevantExcerpt("unrelated ".repeat(200)+"Important code STAR-742"+" filler".repeat(200),"STAR-742",1800);
 assert.match(excerpt,/STAR-742/);
 console.log("PASS: task routing, source/output distinction, explicit versions, lineage, extraction, invalid-file rejection and relevant excerpts.");
+
+for(const prompt of ["xuất bản W","xuất wodr","chuyển Word","soạn thảo Kế hoạch chuẩn văn phòng, hoàn thiện xuất wodr"]){assert.equal(needsDocumentOutput(prompt),true,prompt);assert.deepEqual(requestedExtensions(prompt),[".docx"],prompt);}

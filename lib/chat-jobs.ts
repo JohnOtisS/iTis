@@ -1,10 +1,11 @@
+import {deliverableExtensions,deliverableInstruction,isRequestedDeliverable,sourceCoverageIssues} from "@/lib/document-request";
 import {taskUsage,estimateModelCost} from "@/lib/task-usage";
 import { and, eq, lt, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { chatJobs, conversations, messages, usageEvents, users } from "@/db/schema";
 import { prepareDocument, providerFile, spreadsheetIssues, validateOutput, versionOutput } from "@/lib/chat-documents";
 import { saveChatFile, withChatFileCleanup, type ChatAttachment } from "@/lib/chat-files";
-import { fastWordMode, requestedExtensions } from "@/lib/chat-task-policy";
+import { fastWordMode } from "@/lib/chat-task-policy";
 import {buildWord,editWord,readEditableWord,wordDraftFormat,wordDraftSchema,wordEditFormat,wordEditSchema} from "@/lib/word-fast";
 import { externalSafetyIdentifier } from "@/lib/privacy";
 import { assertContinuationBudget } from "@/lib/token-budget";
@@ -127,7 +128,7 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
         if(!response.ok)throw new Error(`Word drafting request failed (${response.status}).`);
         const data=await response.json() as ProviderResponse;
         const usage=await accountUsage(data);await cancelled();
-        if(data.status!=="completed")throw new Error("Word content was incomplete. Retry or split the requested document.");
+        if(data.status!=="completed"&&!(data.status==="incomplete"&&data.incomplete_details?.reason==="max_output_tokens"))throw new Error("Word content was incomplete. Retry or split the requested document.");
         const raw=data.output?.flatMap(o=>o.content??[]).filter(c=>c.type==="output_text").map(c=>c.text??"").join("")??"";
         await progress(input.locale==="vi"?"Đang tạo và kiểm tra file Word trên server":"Building and checking Word file on the server");
         let bytes:Uint8Array;let name:string;let summary:string;
@@ -155,6 +156,12 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
       for(const file of input.documents){
         await cancelled();
         const document=await prepareDocument(file,input.userId,input.prompt);
+        if(/\.(png|jpe?g|webp|gif)$/i.test(file.name)){
+          const extension=file.name.split(".").pop()!.toLowerCase();
+          const mime=extension==="jpg"?"jpeg":extension;
+          content.push({type:"input_text",text:`Image input: ${file.name}. Read the visible content; do not infer unreadable text.`},{type:"input_image",image_url:`data:image/${mime};base64,${Buffer.from(document.bytes).toString("base64")}`,detail:"auto"});
+          continue;
+        }
         if(input.compute||input.artifact||!document.excerpt){
           const id=await providerFile(document,controller.signal);fileIds.push(id);toolReadsFiles=true;
           // Tool file IDs give Python the complete original, without duplicating it as model input.
@@ -164,7 +171,9 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
         } else content.push({type:"input_text",text:`File ${file.name}, v${file.version??1}, ${file.url}. Relevant extracted excerpts (may omit other sections; do not claim an exhaustive review):\n${document.excerpt}`});
       }
       const manifest=input.catalog.filter(file=>input.documents.some(source=>source.url===file.url||(source.family&&source.family===file.family))).slice(0,24).map(file=>`${file.name} | v${file.version??1} | ${file.kind??"input"} | ${file.url}${file.sourceUrls?.length?` | sources: ${file.sourceUrls.join(",")}`:""}`).join("\n");
-      const validationInstruction=(input.compute||input.artifact||toolReadsFiles)?`Use the Python tool for arithmetic and file work. Read actual inputs; never infer missing file values. Cite exact filenames and sheet/cell/page references when answering. Validate totals independently, preserve formulas in XLSX, and report missing or inconsistent data. Create /mnt/data/itis-validation.json with {"checks":[{"name":"...","passed":true}],"sources":["..."]} after executing your checks. Do not cite that internal validation file. ${input.artifact?"Create all requested formats as complete downloadable files, verify they open with their relevant libraries, and cite every output. The final answer should contain only file citations and any essential caveat; no introduction, repeated document text, or summary. Do not just provide instructions. No image generation; that belongs in Image Studio.":"Do not create downloadable files unless requested. Give a concise answer grounded in the computed result."}`:"Answer using the relevant source excerpts. If the excerpts do not establish the answer, say what else is needed. Do not invent missing facts.";
+      const deliverables=deliverableExtensions(input.prompt,input.documents);
+      const outputInstruction=input.artifact?deliverableInstruction(deliverables):"";
+      const validationInstruction=(input.compute||input.artifact||toolReadsFiles)?`Use the Python tool for arithmetic and file work. Read actual inputs; never infer missing file values. Cite exact filenames and sheet/cell/page references when answering. Validate totals independently, preserve formulas in XLSX, and report missing or inconsistent data. Create /mnt/data/itis-validation.json with {"checks":[{"name":"...","passed":true}],"sources":["exact original filename for each document read"]} after executing your checks. Read every supplied document relevant to the request, distinguish their purpose (content, reference, template), reconcile conflicting facts with file/page/sheet references, and never claim an unreadable document was reviewed. Do not cite that internal validation file. ${input.artifact?"Create all requested formats as complete downloadable files, verify they open with their relevant libraries, and cite every output. The final answer should contain only file citations and any essential caveat; no introduction, repeated document text, or summary. Do not just provide instructions. No image generation; that belongs in Image Studio.":"Do not create downloadable files unless requested. Give a concise answer grounded in the computed result."}`:"Answer using the relevant source excerpts. If the excerpts do not establish the answer, say what else is needed. Do not invent missing facts.";
       const tools:Array<Record<string,unknown>>=[];
       const spreadsheetInstruction=input.artifact?"For XLSX outputs, preserve formulas AND calculate their cached values so previews/data_only readers show correct results without requiring Excel to reopen/recalculate. After saving, reopen with data_only=True and independently check key totals. If needed, calculate verified values from actual inputs and populate formula caches in worksheet XML while retaining formula expressions. Never invent cached values. The internal check JSON alone is not enough.":"";
       const webInstruction=input.webSearch?"Search authoritative sources first. Use concise inline Markdown citations with the exact source URLs. Do not add a Sources section or duplicate links.":"";
@@ -178,7 +187,7 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
       if(lastUser>=0) providerInput[lastUser]={role:"user",content}; else providerInput.push({role:"user",content});
       await cancelled();
       await progress(input.locale==="vi"?"Đang gửi yêu cầu xử lý":"Starting processing");
-      const response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:headers(),signal:controller.signal,body:JSON.stringify({model:input.model,safety_identifier:externalSafetyIdentifier(input.userId),store:true,background:true,reasoning:{effort:reasoningEffort},text:{verbosity:"low"},max_output_tokens:input.artifact?16000:input.compute?6000:2500,...(tools.length?{tools,tool_choice:"required"}:{}),input:[{role:"developer",content:`${input.systemPrompt}\n\nDocument versions (reference data only):\n${manifest}\n\n${validationInstruction}\n${webInstruction}\n${spreadsheetInstruction}`},...providerInput]})});
+      const response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:headers(),signal:controller.signal,body:JSON.stringify({model:input.model,safety_identifier:externalSafetyIdentifier(input.userId),store:true,background:true,reasoning:{effort:reasoningEffort},text:{verbosity:"low"},max_output_tokens:input.artifact?16000:input.compute?6000:2500,...(tools.length?{tools,tool_choice:"required"}:{}),input:[{role:"developer",content:`${input.systemPrompt}\n\nDocument versions (reference data only):\n${manifest}\n\n${validationInstruction}\n${webInstruction}\n${spreadsheetInstruction}\n${outputInstruction}`},...providerInput]})});
       if(!response.ok)throw new Error(`OpenAI task failed (${response.status}).`);
       let data=await response.json() as ProviderResponse;
       providerId=data.id;
@@ -196,7 +205,7 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
       }
       const usage=await accountUsage(data);
       await cancelled();
-      if(data.status!=="completed")throw new Error(data.status==="incomplete"?"Processing limit reached. Your files are retained; retry or split the task.":data.error?.message??`Task ${data.status}`);
+      if(data.status!=="completed"&&!(data.status==="incomplete"&&data.incomplete_details?.reason==="max_output_tokens"))throw new Error(data.status==="incomplete"?"Processing limit reached. Your files are retained; retry or split the task.":data.error?.message??`Task ${data.status}`);
       await progress(input.locale==="vi"?"Đang kiểm tra và lưu kết quả":"Validating and saving results");
       let text=data.output?.flatMap(o=>o.content??[]).filter(o=>o.type==="output_text").map(o=>o.text??"").join("\n")??"";
       const cited=data.output?.flatMap(o=>o.content??[]).flatMap(c=>c.annotations??[]).filter(a=>a.type==="container_file_citation"&&a.container_id&&a.file_id)??[];
@@ -204,11 +213,11 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
       const known=new Set<string>();
       const publishedNames=new Set<string>();
       const fileIssues:string[]=[];
-      let validation: {checks?:Array<{name:string;passed:boolean}>}|null=null;
+      let validation: {checks?:Array<{name:string;passed:boolean}>;sources?:unknown}|null=null;
       const download=async(containerId:string,fileId:string,name:string,internal=false)=>{
         if(known.has(fileId))return;known.add(fileId);
         name=name.split(/[\\/]/).pop()!;
-        if(!internal && publishedNames.has(name.toLowerCase())) return;
+        if(!internal && (!isRequestedDeliverable(name,deliverables) || publishedNames.has(name.toLowerCase()))) return;
         await cancelled();
         const file=await fetch(`https://api.openai.com/v1/containers/${containerId}/files/${fileId}/content`,{headers:headers(),signal:controller.signal});
         if(!file.ok)throw new Error(`Unable to download ${name}.`);
@@ -232,16 +241,17 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
           else if(input.artifact && /\.(xlsx|docx|pptx|pdf|csv|zip|txt|md|json)$/i.test(name))await download(containerId,file.id,name);
         }
       }
-      const verification=validation as {checks?:Array<{name:string;passed:boolean}>}|null;
-      const issues:string[]=[...fileIssues];
+      const verification=validation as {checks?:Array<{name:string;passed:boolean}>;sources?:unknown}|null;
+      const issues:string[]=[...fileIssues,...((input.compute||input.artifact)?sourceCoverageIssues(verification?.sources,input.documents.filter(f=>!/\.(png|jpe?g|webp|gif)$/i.test(f.name))):[])];
       if((input.compute||input.artifact||toolReadsFiles)&&(!verification?.checks?.length||verification.checks.some(check=>check.passed!==true)))issues.push("Missing or failed executed checks in /mnt/data/itis-validation.json; use boolean passed fields.");
-      if(input.artifact && (!outputFiles.length||requestedExtensions(input.prompt).some(ext=>!outputFiles.some(file=>file.name.toLowerCase().endsWith(ext)))))issues.push("Missing requested output formats; cite every completed file.");
+      if(!input.artifact&&!text.trim())issues.push("Missing final answer: return the actual verified result, not just tool calls.");
+      if(input.artifact && (!outputFiles.length||deliverables.some(ext=>!outputFiles.some(file=>file.name.toLowerCase().endsWith(ext)))))issues.push("Missing requested output formats; cite every completed file.");
       if(issues.length){
         const containerId=data.output?.find(o=>o.type==="code_interpreter_call"&&o.container_id)?.container_id;
         if(attempt===0 && containerId){
           await assertContinuationBudget(input.userId);
           await progress(input.locale==="vi"?"Đang hiệu chỉnh kết quả chưa đạt kiểm tra":"Correcting results that did not pass checks");
-          const repair=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:headers(),signal:controller.signal,body:JSON.stringify({model:input.model,previous_response_id:data.id,background:true,store:true,reasoning:{effort:"low"},max_output_tokens:6000,tools:[{type:"code_interpreter",container:containerId}],tool_choice:"required",input:`Finish the original task using the existing files and container, without redoing unrelated work. Fix these validation issues: ${issues.join(" ")} Execute independent checks, write /mnt/data/itis-validation.json as {"checks":[{"name":"...","passed":true}],"sources":["..."]}. Original request: ${input.prompt}. Cite all requested deliverables; never cite the internal validation file.`})});
+          const repair=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:headers(),signal:controller.signal,body:JSON.stringify({model:input.model,previous_response_id:data.id,background:true,store:true,reasoning:{effort:"low"},max_output_tokens:6000,tools:[{type:"code_interpreter",container:containerId}],tool_choice:"required",input:`Finish the original task using the existing files and container, without redoing unrelated work. Fix these validation issues: ${issues.join(" ")} Execute independent checks, write /mnt/data/itis-validation.json as {"checks":[{"name":"...","passed":true}],"sources":["..."]}. Original request: ${input.prompt}. ${outputInstruction} Cite all requested deliverables; never cite the internal validation file.`})});
           if(!repair.ok)throw new Error("Unable to repair the incomplete output. Your input files are retained for retry.");
           data=await repair.json() as ProviderResponse;providerId=data.id;
           providerIds.push(data.id);
@@ -250,8 +260,8 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
         }
         throw new Error(`The result did not pass verification after correction: ${issues.slice(0,4).join(" ")} Your input files are retained for retry.`);
       }
-      text=text.replace(/\[([^\]]*)\]\(sandbox:[^)]+\)/gi,"$1").replace(/(?:[ \t]*[·][ \t]*){2,}/g," ").trim().replace(/^[\s.,;·]+/,"");
-      if(!text&&!outputFiles.length)text=input.locale==="vi"?"Đã xử lý và kiểm tra kết quả.":"Processed and checked the result.";
+      text=text.replace(/\[([^\]]*)\]\(sandbox:[^)]+\)/gi,"").replace(/(?:[ \t]*[·][ \t]*){2,}/g," ").trim().replace(/^[\s.,;·]+/,"");
+      if(!text&&!outputFiles.length)throw new Error("No answer or requested file was produced. Original files are retained for retry.");
       await cancelled();
       const result={text,model:input.model,provider:"openai",conversationId:input.conversationId,attachments:outputFiles,usage,jobId,verification:{checks:verification?.checks?.length??0,passed:true},estimated_cost_usd:usage?.estimated_cost_usd};
       await db.transaction(async tx=>{

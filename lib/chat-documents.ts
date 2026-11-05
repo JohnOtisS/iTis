@@ -1,3 +1,4 @@
+import {sourceFormatText,documentRequestText} from "@/lib/document-request";
 import {documentKind} from "@/lib/artifact-policy";
 import {extractText,getDocumentProxy} from "unpdf";
 import { createHash } from "node:crypto";
@@ -100,9 +101,11 @@ export async function documentCatalog(conversationId: string) {
 }
 export function selectDocuments(catalog: ChatAttachment[], prompt: string) {
   const lower = prompt.toLowerCase();
-  const extensions = ["xlsx","docx","pptx","pdf","csv"].filter(ext => lower.includes(ext) || (ext === "xlsx" && /excel/.test(lower)) || (ext === "docx" && /word/.test(lower)));
+  const source=sourceFormatText(prompt);
+  const extensions = ["xlsx","docx","pptx","pdf","csv"].filter(ext => source.includes(ext) || (ext === "xlsx" && /excel/.test(source)) || (ext === "docx" && /word/.test(source)));
   const named = catalog.filter(file => lower.includes(file.name.toLowerCase()) || lower.includes(file.name.toLowerCase().replace(/\.[^.]+$/, "")));
   let candidates = named.length ? named : /\b(original|source)\b|file gốc|tệp gốc/i.test(prompt) ? catalog.filter(file => file.kind === "input") : catalog;
+  if(!named.length&&!/\bv(?:ersion)?\s*\d|bản\s+\d/i.test(prompt)&&/phan tich|tong hop|analy[sz]|synthesi[sz]/.test(documentRequestText(prompt))&&candidates.some(f=>f.kind==="input"))candidates=candidates.filter(f=>f.kind==="input");
   const kind=documentKind(prompt);
   if(!named.length&&kind)candidates=candidates.filter(file=>documentKind(file.name)===kind);
   const requestedVersions = [...prompt.matchAll(/\bv(?:ersion)?\s*(\d+)|bản\s+(\d+)/gi)].map(match=>Number(match[1]??match[2]));
@@ -116,7 +119,7 @@ export function selectDocuments(catalog: ChatAttachment[], prompt: string) {
     const key = `${file.family ?? file.name.toLowerCase()}:${extname(file.name)}${requestedVersions.length?`:${file.version??1}`:""}`;
     if (seen.has(key)) return false;
     seen.add(key); return true;
-  }).slice(0, /compare|đối chiếu|so sánh|tất cả|all files/i.test(prompt) ? 10 : 4);
+  }).slice(0,10);
 }
 export function versionOutput(file: ChatAttachment, sources: ChatAttachment[], catalog: ChatAttachment[]): ChatAttachment {
   const previous = sources.find(source => extname(source.name) === extname(file.name));

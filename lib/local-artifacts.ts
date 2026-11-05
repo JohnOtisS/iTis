@@ -60,6 +60,11 @@ async function performLocalArtifactAction(input:LocalInput) {
     const sources=await db.select().from(messages).where(and(eq(messages.conversationId,input.conversationId),eq(messages.role,"assistant"),input.sourceMessageId?eq(messages.id,input.sourceMessageId):undefined)).orderBy(desc(messages.createdAt),desc(messages.id)).limit(input.sourceMessageId?1:80);
     let source:typeof sources[number]|undefined=sources[0];
     if(!input.sourceMessageId){
+      const [lastUser]=await db.select({createdAt:messages.createdAt}).from(messages).where(and(eq(messages.conversationId,input.conversationId),eq(messages.role,"user"))).orderBy(desc(messages.createdAt)).limit(1);
+      // An unanswered request may ask for a new document. Never export an older unrelated answer.
+      if(lastUser&&(!sources[0]||lastUser.createdAt>sources[0].createdAt))return null;
+    }
+    if(!input.sourceMessageId){
       const kind=documentKind(input.prompt);
       const drafts=sources.filter(s=>s.content.trim().length>=160&&!s.attachments.length);
       const matching=kind?drafts.filter(s=>documentKind(s.content.slice(0,500))===kind):drafts;

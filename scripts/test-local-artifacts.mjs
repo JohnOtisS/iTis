@@ -33,6 +33,7 @@ try{
   const repeated=await checked(`/api/conversations/${chat}/export`,{sourceMessageId:source,format:"docx"});assert.equal(repeated.attachments[0].url,file.url);
   const named=await checked("/api/chat",{conversationId:chat,prompt:"Xuất cái Kế hoạch phía trên ra bản Word"});assert.equal(named.attachments[0].url,file.url);
   const resent=await checked("/api/chat",{conversationId:chat,prompt:`Gửi lại file ${file.name}`});assert.equal(resent.attachments[0].url,file.url);
+  for(const prompt of ["xuất bản W","xuất wodr","xuất wrod"]){const alias=await checked("/api/chat",{conversationId:chat,prompt});assert.equal(alias.attachments.length,1);assert.match(alias.attachments[0].name,/\.docx$/i);}
   const sheet=await checked(`/api/conversations/${chat}/export`,{sourceMessageId:letter,format:"docx"});assert.notEqual(sheet.attachments[0].url,file.url);
   const ambiguous=await checked("/api/chat",{conversationId:chat,prompt:"Gửi lại file Word"});assert.equal(ambiguous.attachments.length,0);assert.match(ambiguous.text,/tệp nào/);
   const markdown=await checked(`/api/conversations/${chat}/export`,{sourceMessageId:source,format:"md"});assert.equal(await (await api(0,markdown.attachments[0].url)).text(),plan);
@@ -41,7 +42,7 @@ try{
   assert.equal((await api(0,`/api/conversations/${chat}/export`,{sourceMessageId:randomUUID()})).status,404);
   assert.equal((await api(0,`/api/conversations/${chat}/export`,{sourceMessageId:source,format:"exe"})).status,400);
   const reloaded=await (await api(0,`/api/conversations/${chat}`)).json();
-  const local=reloaded.messages.filter(m=>m.model==="iTis Files");assert.equal(local.length,7);assert.ok(local.every(m=>m.taskUsage.total_tokens===0));
+  const local=reloaded.messages.filter(m=>m.model==="iTis Files");assert.equal(local.length,10);assert.ok(local.every(m=>m.taskUsage.total_tokens===0));
   const usage=await p.query("select count(*)::int as count from usage_events where user_id=any($1::uuid[])",[ids]);assert.equal(usage.rows[0].count,0);
   const storage=await p.query("select count(*)::int as count from stored_files where user_id=$1",[ids[0]]);assert.equal(storage.rows[0].count,3,"repeated export must reuse storage");
   const long=randomUUID();await p.query("insert into messages(id,conversation_id,role,content) values($1,$2,'assistant',$3)",[long,chat,"x".repeat(6500)]);
