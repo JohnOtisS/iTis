@@ -1939,9 +1939,9 @@ function ChatView({
                   onClick={() => setWebSearchEnabled(!webSearchEnabled)}
                   disabled={!webSearchAvailable || sending}
                   aria-pressed={webSearchEnabled}
-                  aria-label={t("Search the web for this message", "Tìm kiếm web cho tin nhắn này")}
+                  aria-label={t("Always search the web for this message", "Luôn tra cứu web cho tin nhắn này")}
                   title={webSearchAvailable
-                    ? t("Search the web for this message", "Tìm kiếm web cho tin nhắn này")
+                    ? t("iTis searches automatically when needed. Click to request web search for this message.", "iTis tự tra cứu khi cần. Bấm để yêu cầu tra cứu web cho tin nhắn này.")
                     : t("Web search requires the OpenAI environment", "Tìm kiếm web cần môi trường OpenAI")}
                   className={`pointer-events-auto grid size-9 shrink-0 place-items-center rounded-full text-xs transition disabled:cursor-not-allowed disabled:opacity-35 ${webSearchEnabled ? "bg-sky-400/15 text-sky-300 ring-1 ring-sky-300/30" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"}`}
                 >

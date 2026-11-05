@@ -1,4 +1,17 @@
-import {affirmativeDocumentRequest,outputExtensions} from "@/lib/document-request";
+import {affirmativeDocumentRequest,documentRequestText,outputExtensions} from "@/lib/document-request";
+
+export function needsWebSearch(prompt: string) {
+  const text = documentRequestText(prompt).replace(/`[^`]*`|"[^"]*"|“[^”]*”/g, " ");
+  if (/\b(?:khong (?:can )?(?:tra cuu|tim (?:kiem )?(?:web|tren mang)|dung (?:web|internet))|(?:do not|don't|without) (?:use the web|search(?: the web)?|brows(?:e|ing))|(?:chi|only) (?:dua vao (?:tep|file)|use (?:the )?attached (?:file|documents?)))\b/.test(text)) return false;
+  if (/\b(?:tra cuu|tim(?: kiem)?|kiem chung|xac minh|search|browse|check|verify|sources?)\b[^.!?\n]{0,50}\b(?:web|internet|online|tren mang)\b|\b(?:fact[ -]?check|look\s*up|nguon chinh thuc|official sources?)\b/.test(text)) return true;
+  if (/^\s*(?:(?:hay|ban|please)\s+)*(?:viet|soan|dich|sua|chinh sua|write|draft|translate|edit)\b/.test(text)) return false;
+  if (/\b(?:trong (?:file|tep|tai lieu) (?:dinh kem|vua gui)|in the attached (?:file|document|spreadsheet))\b/.test(text)) return false;
+
+  return /https?:\/\/|\b(?:tra cuu|moi nhat|hom nay|hien tai|bay gio|tin tuc|latest|today|news|currently|current (?:president|ceo|price|version|status|weather|law|rules?|regulations?))\b/.test(text)
+    || (!/\b(?:la gi|nghia la gi|what (?:is|does) .{1,40} mean)\b/.test(text) && /\b(?:gia vang|gia xang|ti gia|ty gia|thoi tiet|exchange rate|gold price|weather forecast)\b/.test(text))
+    || /\b(?:ra mat|ra|mo ban|phat hanh|cap nhat|con hieu luc|con hoat dong)\s+chua\b|\b(?:ai (?:dang la|giu chuc)|who (?:is|runs) the (?:president|ceo|prime minister)|(?:released|available) yet|still in effect)\b/.test(text)
+    || /\b(?:gia|price|so sanh|khac nhau|compare|difference between)\b[^.!?\n]{0,100}\b(?:iphone|ipad|galaxy|pixel|macbook)\s*\d/.test(text);
+}
 export function needsComputation(prompt: string, hasDocuments = false) {
   return /\b(calculate|reconcile|variance|sum|formula|statistics|forecast|audit)\b|tính (?:tổng|toán|thuế|lãi)|công thức|đối chiếu|chênh lệch|thống kê|dự báo|kiểm toán/i.test(prompt)
     || (hasDocuments && /\b(vat|total|quantity|amount)\b|tổng|số lượng|thành tiền|doanh thu/i.test(prompt));

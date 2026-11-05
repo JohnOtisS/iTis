@@ -1,4 +1,5 @@
 import {documentRequestText} from "@/lib/document-request";
+import {needsWebSearch} from "@/lib/chat-task-policy";
 // Deterministic intent resolution. Ambiguous sources must never trigger a paid guess.
 export function normalizedReference(value: string) {
   return documentRequestText(value).replace(/[_-]+/g," ").replace(/\s+/g," ").trim();
@@ -21,6 +22,7 @@ export function localArtifactIntent(prompt: string): "resend"|"export"|null {
   if (/\b(sua|chinh|cap nhat|thay|them|chen|xoa|bo sung|rut gon|sap xep|tom tat|phan tich|dich|tinh|soan|viet|edit|delete|insert|append|change|update|replace|summari\w*|analy\w*|translate|calculate|draft|rewrite)\b/.test(text)
     || /ghi nho|bo nho|remember|memory|forget|quen|sang tieng|into (?:english|vietnamese)|dinh dang lai|nghi dinh|nd\s*30|the thuc|van phong|font|can le|mau goc|template|tracked|logo|hinh anh|khong\s+(?:can\s+)?(?:xuat|gui)|do not|don't/.test(text)) return null;
   if (/gui lai|tai lai|resend|send .{0,40}again|download/.test(text) && /file|tep|word|pdf|excel|docx|xlsx|pptx|tai lieu|ban vua/.test(text)) return "resend";
+  if(needsWebSearch(prompt))return null;
   if(/pdf|excel|xlsx|pptx|powerpoint|csv/.test(text))return null;
   return /\b(xuat|export|chuyen|convert)\b/.test(text) && /word|docx|\.txt\b|markdown|\.md\b/.test(text)?"export":null;
 }

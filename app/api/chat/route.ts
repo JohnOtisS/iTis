@@ -20,7 +20,7 @@ import { externalSafetyIdentifier } from "@/lib/privacy";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { buildChatContext } from "@/lib/chat-context";
 import { documentCatalog, namedDocuments, selectDocuments } from "@/lib/chat-documents";
-import { fastWordMode, isDocumentEditFollowup, isImageGeneration, needsComputation, needsDocumentOutput } from "@/lib/chat-task-policy";
+import { fastWordMode, isDocumentEditFollowup, isImageGeneration, needsComputation, needsDocumentOutput, needsWebSearch } from "@/lib/chat-task-policy";
 import { startChatJob } from "@/lib/chat-jobs";
 import { assertContinuationBudget } from "@/lib/token-budget";
 
@@ -66,10 +66,6 @@ function makeTitle(prompt: string, locale: "en" | "vi") {
 }
 function isComplexTask(prompt: string) {
   return /excel|báo cáo|powerpoint|phân tích nhiều|nhiều file|reasoning|suy luận|chính xác cao|nghiên cứu|code|coding|lập trình|debug|kiến trúc|pháp lý|tài chính|y tế/i.test(prompt);
-}
-
-function isWebSearchTask(prompt: string) {
-  return /https?:\/\/|\b(search|browse|look\s*up|latest|today|news|fact[ -]?check)\b|\b(on|from|using|search(?: the)?)\s+(the\s+)?(web|internet|online)\b|\bcurrent\s+(president|ceo|price|version|status|weather|law|rules?|regulations?)\b|tìm kiếm|tra cứu|tìm trên (mạng|web)|trên mạng|trên web|mới nhất|hiện tại|hôm nay|tin tức|(?:nguồn|dẫn chứng|kiểm chứng|xác minh).{0,25}(?:web|internet|trên mạng)|\b(?:sources?|verify)\b.{0,25}\b(?:web|internet|online)\b/i.test(prompt);
 }
 
 function preferredArtifactExtensions(prompt:string){
@@ -182,7 +178,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   const invalidUpload=uploadError(attachments,uploadLimits,user.locale==="vi");
   if(invalidUpload)return NextResponse.json({code:"UPLOAD_LIMIT",error:invalidUpload,uploadLimits},{status:413});
   // File delivery/export is deterministic and does not require an API key or AI quota.
-  if(!attachments.length && !regenerate && localArtifactIntent(prompt)){
+  if(!attachments.length && !regenerate && !forceWebSearch && localArtifactIntent(prompt)){
     if(!conversationId){const [created]=await getDb().insert(conversations).values({userId:user.id,title:makeTitle(prompt,user.locale)}).returning();conversationId=created.id;}
     try{const result=await localArtifactAction({userId:user.id,conversationId,prompt,locale:user.locale});if(result)return NextResponse.json(result);}
     catch(error){
@@ -205,7 +201,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   let relevantMemories = user.memoryEnabled ? await retrieveUserMemories(user.id, prompt, 4) : [];
   const preferredProvider = (settings.ai_environment as { provider?: "local" | "openai" } | undefined)?.provider === "local" ? "local" : "openai";
   const systemProvider: "local" | "openai" = preferredProvider;
-  const webSearchTask = forceWebSearch || isWebSearchTask(prompt);
+  const webSearchTask = forceWebSearch || needsWebSearch(prompt);
   if (systemProvider === "openai" && !process.env.OPENAI_API_KEY) {
     return NextResponse.json({
       code: "OPENAI_NOT_CONFIGURED",
@@ -221,7 +217,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   if (systemProvider === "local" && webSearchTask) {
     return NextResponse.json({
       code: "LOCAL_WEB_SEARCH_UNSUPPORTED",
-      error: t("Web search requires the OpenAI environment. Ask an admin to switch the system to OpenAI, or turn off Web search for this message.", "Tìm kiếm web cần môi trường OpenAI. Hãy nhờ admin chuyển hệ thống sang OpenAI, hoặc tắt Web cho tin nhắn này."),
+      error: t("Web search requires the OpenAI environment. Ask an admin to switch the system to OpenAI.", "Tìm kiếm web cần môi trường OpenAI. Hãy nhờ admin chuyển hệ thống sang OpenAI."),
     }, { status: 400 });
   }
 

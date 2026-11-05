@@ -35,4 +35,6 @@ assert.equal(isBlockedArtifactSource("**Chưa thể xuất danh sách vào Excel
 assert.equal(isBlockedArtifactSource("## Kết quả đối chiếu\nDanh sách có 5 người. Thiếu dữ liệu ở một số cột."),false);
 assert.equal(isBlockedArtifactSource("Hãy chọn nút Xuất Word tại câu trả lời cần xuất, hoặc nêu rõ tên tài liệu."),true);
 assert.equal(localArtifactIntent("Chuyển file Word sang file exce;"),null);
+assert.equal(localArtifactIntent("Tra cứu giá vàng rồi xuất Word"),null);
+assert.equal(localArtifactIntent("Gửi lại file Word giá vàng hôm nay"),"resend");
 assert.deepEqual(resolveFileReference([plan,{name:"Data.xlsx",url:"sheet"}],"Gửi lại file exce;").files,[{name:"Data.xlsx",url:"sheet"}]);

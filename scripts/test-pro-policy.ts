@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { zipSync, strToU8 } from "fflate";
-import { needsDocumentOutput, requestedExtensions, needsComputation, isImageGeneration, fastWordMode } from "../lib/chat-task-policy";
+import { needsDocumentOutput, requestedExtensions, needsComputation, isImageGeneration, fastWordMode, needsWebSearch } from "../lib/chat-task-policy";
 import { deliverableExtensions, isRequestedDeliverable } from "../lib/document-request";
 import { selectDocuments, versionOutput, inspectDocument, spreadsheetIssues, validateOutput } from "../lib/chat-documents";
 import { relevantExcerpt } from "../lib/chat-context";
@@ -20,6 +20,30 @@ assert.deepEqual(requestedExtensions("Xuất Word, không xuất PDF."),[".docx"
 assert.equal(needsComputation("Tính tổng số liệu và đối chiếu",true),true);
 assert.equal(needsComputation("Phân tích nội dung hợp đồng",true),false);
 assert.equal(isImageGeneration("Vẽ một bức tranh phong cảnh"),true);
+for(const prompt of [
+  "iPhone 18 Pro Max ra chưa?",
+  "Phân tích sự khác nhau của iPhone 18 Pro Max và 15 Pro Max, xuất ra file exce;",
+  "Giá iPhone 15 Pro Max bao nhiêu?",
+  "Tỷ giá USD sang VND bao nhiêu?",
+  "Ai đang là thủ tướng Nhật Bản?",
+  "Cho tôi biết thời tiết Đà Nẵng",
+  "Nghị định này còn hiệu lực chưa?",
+  "Tra cứu trên mạng và viết email tóm tắt",
+  "Is this regulation still in effect?",
+  "Tóm tắt trang https://example.com/article",
+])assert.equal(needsWebSearch(prompt),true,prompt);
+for(const prompt of [
+  "Viết email xin nghỉ phép hôm nay",
+  "Sửa nội dung hiện tại của file Word",
+  "Tìm kiếm số liệu trong file Excel đính kèm",
+  "Tra cứu chi phí hôm nay trong tệp vừa gửi",
+  "Không cần tra cứu. So sánh iPhone 18 Pro Max và 15 Pro Max.",
+  "Chỉ dựa vào file đính kèm để so sánh giá vàng",
+  "Tỷ giá là gì?",
+  "Giải thích thuật toán binary search",
+  "Explain electric current",
+  'Dịch câu "What happened today?"',
+])assert.equal(needsWebSearch(prompt),false,prompt);
 const v1={name:"report.xlsx",url:"/api/files/first.xlsx",family:"first",version:1,kind:"input" as const};
 const v2={name:"report.xlsx",url:"/api/files/second.xlsx",family:"first",version:2,kind:"output" as const};
 const priorWord=[{name:"old-answer.docx"}];
