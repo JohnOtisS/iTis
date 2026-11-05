@@ -1,4 +1,6 @@
 "use client";
+
+import { isBlockedArtifactSource } from "@/lib/artifact-policy";
 import {upsertReply} from "@/lib/provider-events";
 import {readChatEvents} from "@/lib/chat-stream";
 import {taskFailureText} from "@/lib/task-failure";
@@ -1784,7 +1786,7 @@ function ChatView({
                         >
                           {copiedMessageKey === (message.id ?? `assistant-${index}`) ? <Check className="size-4 text-primary" /> : <Copy className="size-4" />}
                         </button>
-                        {message.id&&!message.attachments?.length&&!message.id.startsWith("stream-")&&<button type="button" disabled={sending||Boolean(exportingAnswer)} onClick={async()=>{
+                        {message.id&&!message.attachments?.length&&!message.id.startsWith("stream-")&&!isBlockedArtifactSource(message.content)&&<button type="button" disabled={sending||Boolean(exportingAnswer)} onClick={async()=>{
                           setExportingAnswer(message.id!);setAttachmentError("");
                           try{await exportAnswer(message.id!);}catch(error){setAttachmentError(error instanceof Error?error.message:t("Export failed.","Xuất file thất bại."));}finally{setExportingAnswer(null);}
                         }} title={t("Export this exact answer as Word · no AI tokens","Xuất đúng câu trả lời này ra Word · không dùng token AI")} aria-label={t("Export Word","Xuất Word")} className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:bg-white/5 hover:text-foreground disabled:opacity-40">{exportingAnswer===message.id?<LoaderCircle className="size-4 animate-spin"/>:<Download className="size-4"/>}Word</button>}
@@ -1868,7 +1870,7 @@ function ChatView({
                 ref={fileRef}
                 type="file"
                 multiple
-                accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.tsv,.txt,.md,.json,.html,.xml,.js,.ts,.tsx,.jsx,.py,.java,.c,.cpp,.sql"
+                accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.xlsm,.csv,.tsv,.txt,.md,.json,.html,.xml,.js,.ts,.tsx,.jsx,.py,.java,.c,.cpp,.sql"
                 className="hidden"
                 onChange={(event) => {
                   attachFiles(Array.from(event.target.files ?? []));
@@ -2134,11 +2136,11 @@ function MessageAttachments({
         const canPreview = Boolean(isImage || file.type === "application/pdf");
         const card = (
           <div
-            className={`min-w-0 overflow-hidden rounded-xl border ${compact ? "border-white/10 bg-black/10" : "border-primary/15 bg-primary/[.04]"}`}
+            className="min-w-0 overflow-hidden rounded-xl border border-border bg-card text-card-foreground"
           >
             {isImage && <img src={file.url} alt={file.name} loading="lazy" className="h-32 w-full bg-black/20 object-cover" />}
             <div className="flex items-center gap-3 px-3 py-2.5">
-              {!isImage && <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10">
+              {!isImage && <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted">
                 <FileArchive className="size-4 text-primary" />
               </div>}
               <div className="min-w-0 flex-1">

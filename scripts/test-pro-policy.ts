@@ -11,6 +11,10 @@ assert.deepEqual(requestedExtensions("Từ file CSV gốc, tạo XLSX, DOCX, PDF
 assert.deepEqual(requestedExtensions("Chuyển file Word sang PDF."),[".pdf"]);
 assert.deepEqual(requestedExtensions("Từ CSV vừa gửi, đổi Qty của Beta thành 3. Xuất file Excel XLSX có công thức. Nêu tổng, không yêu cầu tải lại CSV."),[".xlsx"]);
 assert.deepEqual(requestedExtensions("Tạo Excel XLSX và CSV để tải xuống."),[".xlsx",".csv"]);
+assert.equal(needsDocumentOutput("Phân tích file Excel, tính tổng doanh thu và trả lời trong chat."),false);
+assert.equal(needsDocumentOutput("Analyze the file report.xlsx and explain the differences."),false);
+assert.equal(needsDocumentOutput("Tính tổng doanh thu rồi xuất file Excel."),true);
+assert.equal(needsDocumentOutput("Cho tôi một file Excel mẫu."),true);
 assert.deepEqual(requestedExtensions("Xuất Word, không xuất PDF."),[".docx"]);
 assert.equal(needsComputation("Tính tổng số liệu và đối chiếu",true),true);
 assert.equal(needsComputation("Phân tích nội dung hợp đồng",true),false);
@@ -42,3 +46,6 @@ assert.match(excerpt,/STAR-742/);
 console.log("PASS: task routing, source/output distinction, explicit versions, lineage, extraction, invalid-file rejection and relevant excerpts.");
 
 for(const prompt of ["xuất bản W","xuất wodr","chuyển Word","soạn thảo Kế hoạch chuẩn văn phòng, hoàn thiện xuất wodr"]){assert.equal(needsDocumentOutput(prompt),true,prompt);assert.deepEqual(requestedExtensions(prompt),[".docx"],prompt);}
+
+assert.equal(inspectDocument(Buffer.from("\ufeffMặt hàng\tSố lượng\nAlpha\t3", "utf16le"), "excel.tsv"), "Mặt hàng\tSố lượng\nAlpha\t3");
+assert.match(inspectDocument(sharedSheet,"sales.xlsm")!, /A1: Alpha/);

@@ -5,7 +5,7 @@ import {conversations,messages,users} from "@/db/schema";
 import {documentCatalog,validateOutput,versionOutput} from "@/lib/chat-documents";
 import {readChatFile,saveChatFile,type ChatAttachment} from "@/lib/chat-files";
 import {buildWord,wordDraftSchema} from "@/lib/word-fast";
-import {documentKind,localArtifactIntent,resolveFileReference} from "@/lib/artifact-policy";
+import {documentKind,isBlockedArtifactSource,localArtifactIntent,resolveFileReference} from "@/lib/artifact-policy";
 import {taskUsage} from "@/lib/task-usage";
 
 export function markdownWordDraft(content:string) {
@@ -45,7 +45,7 @@ async function performLocalArtifactAction(input:LocalInput) {
   if(!intent)return null;
   const [owned]=await db.select({id:conversations.id}).from(conversations).where(and(eq(conversations.id,input.conversationId),eq(conversations.userId,input.userId)));
   if(!owned)throw new Error("ARTIFACT_SOURCE_NOT_FOUND");
-  const catalog=await documentCatalog(input.conversationId);
+  let catalog=await documentCatalog(input.conversationId);
   const t=(en:string,vi:string)=>input.locale==="vi"?vi:en;
   let files:ChatAttachment[]=[];let clarification="";
   if(intent==="resend"){
@@ -59,6 +59,13 @@ async function performLocalArtifactAction(input:LocalInput) {
     if(!input.sourceMessageId&&/pdf|excel|xlsx|pptx|powerpoint|csv/i.test(input.prompt))return null;
     const sources=await db.select().from(messages).where(and(eq(messages.conversationId,input.conversationId),eq(messages.role,"assistant"),input.sourceMessageId?eq(messages.id,input.sourceMessageId):undefined)).orderBy(desc(messages.createdAt),desc(messages.id)).limit(input.sourceMessageId?1:80);
     let source:typeof sources[number]|undefined=sources[0];
+    const blockedSources = new Set(sources.filter(answer => !answer.attachments.length && isBlockedArtifactSource(answer.content)).map(answer => answer.id));
+    const isBlockedExport = (file: ChatAttachment) => Boolean(file.sourceMessageId && blockedSources.has(file.sourceMessageId));
+    catalog = catalog.filter(file => !isBlockedExport(file));
+    if(source && (blockedSources.has(source.id) || source.attachments.some(isBlockedExport))){
+      if(!input.sourceMessageId && catalog.some(file=>file.kind!=="output"))return null;
+      throw new Error("ARTIFACT_SOURCE_BLOCKED");
+    }
     if(!input.sourceMessageId){
       const [lastUser]=await db.select({createdAt:messages.createdAt}).from(messages).where(and(eq(messages.conversationId,input.conversationId),eq(messages.role,"user"))).orderBy(desc(messages.createdAt)).limit(1);
       // An unanswered request may ask for a new document. Never export an older unrelated answer.
@@ -66,7 +73,7 @@ async function performLocalArtifactAction(input:LocalInput) {
     }
     if(!input.sourceMessageId){
       const kind=documentKind(input.prompt);
-      const drafts=sources.filter(s=>s.content.trim().length>=160&&!s.attachments.length);
+      const drafts=sources.filter(s=>s.content.trim().length>=160&&!s.attachments.length&&!blockedSources.has(s.id));
       const matching=kind?drafts.filter(s=>documentKind(s.content.slice(0,500))===kind):drafts;
       source=matching[0];
       if(kind&&matching.length>1&&sources[0]?.id!==source?.id&&!/vừa|mới nhất|latest|last/i.test(input.prompt))clarification=t("Several drafts match. Use “Export Word” on the exact answer you want.","Có nhiều bản nháp phù hợp. Hãy bấm “Xuất Word” ngay tại câu trả lời cần xuất.");

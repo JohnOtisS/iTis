@@ -8,6 +8,12 @@ export function documentKind(value: string) {
   const matches=([[/\bke hoach\b/,"plan"],[/\bcong van\b/,"letter"],[/\bbao cao\b/,"report"]] as const).map(([re,kind])=>({kind,at:text.search(re)})).filter(m=>m.at>=0).sort((a,b)=>a.at-b.at);
   return matches[0]?.kind??null;
 }
+
+export function isBlockedArtifactSource(content: string) {
+  const opening = normalizedReference(content.slice(0, 500)).replace(/^[#>*_\s]+/, "");
+  return /^(?:(?:toi|minh|i|we) )?(?:chua the|khong the|cannot|can't|could not|couldn't|(?:am|are) unable to|unable to) (?:xuat|tao|lap|loc|doi chieu|hoan tat|hoan thanh|export|create|generate|complete|produce|finish)\b/.test(opening)
+    || /^(?:chua du|thieu) (?:du lieu|thong tin|tai lieu)\b/.test(opening);
+}
 export function localArtifactIntent(prompt: string): "resend"|"export"|null {
   const text=normalizedReference(prompt);
   // These requests change content, compute, research, or require a particular layout.

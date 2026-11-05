@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {localArtifactIntent,resolveFileReference} from "../lib/artifact-policy";
+import {isBlockedArtifactSource,localArtifactIntent,resolveFileReference} from "../lib/artifact-policy";
 import {markdownWordDraft} from "../lib/local-artifacts";
 import {buildWord,readEditableWord} from "../lib/word-fast";
 import {estimateModelCost,taskUsage,terminalProviderUsage} from "../lib/task-usage";
@@ -30,3 +30,6 @@ assert.equal(estimateModelCost("gpt-6.1-sol",{input_tokens:100,output_tokens:20,
 console.log("PASS intent exclusions, source type/version ambiguity, exact text/table/code export, no duplicated title, reasoning/cache-write accounting");
 
 for(const prompt of ["xuất bản W","xuất wodr","xuất wrod"])assert.equal(localArtifactIntent(prompt),"export",prompt);
+
+assert.equal(isBlockedArtifactSource("**Chưa thể xuất danh sách vào Excel**: trích đoạn PDF chưa có nhóm cần đối chiếu. Vui lòng gửi nguồn còn thiếu."),true);
+assert.equal(isBlockedArtifactSource("## Kết quả đối chiếu\nDanh sách có 5 người. Thiếu dữ liệu ở một số cột."),false);

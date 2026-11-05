@@ -5,7 +5,8 @@ export function needsComputation(prompt: string, hasDocuments = false) {
 }
 export function needsDocumentOutput(prompt: string) {
   prompt = documentRequestText(prompt).replace(/khong\s+(?:can\s+)?(?:xuat|tao|render)\s+(?:file|tep)|do not\s+(?:create|export|generate)\s+(?:any\s+)?files?/gi, "");
-  return /(chuyen|convert|xuat|export|render|tao|lam|sua|chinh|cap nhat|modify|edit|generate|create|make).{0,70}(file|tep|pdf|word|docx|excel|xlsx|csv|powerpoint|pptx|bao cao|report)|(file|tep).{0,45}(pdf|word|docx|excel|xlsx|csv|powerpoint|pptx)/i.test(prompt);
+  return /\b(chuyen|convert|xuat|export|render|tao|lap|lam|sua|chinh|cap nhat|modify|edit|generate|create|make)\b.{0,70}\b(file|tep|pdf|word|docx|excel|xlsx|csv|powerpoint|pptx|bao cao|report)\b/.test(prompt)
+    || /\b(?:cho (?:toi|minh|em|anh)|send me|give me)\s+(?:mot\s+|an?\s+|the\s+)?(?:file|tep)\s+(?:pdf|word|docx|excel|xlsx|csv|powerpoint|pptx)\b/.test(prompt);
 }
 export const requestedExtensions=outputExtensions;
 export function isImageGeneration(prompt: string) {

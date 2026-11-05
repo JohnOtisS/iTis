@@ -39,7 +39,7 @@ export function sourceFormatText(prompt:string){
 }
 export function needsFullDocumentReview(prompt:string,count:number){
   return count>0&&/toan bo|tat ca|day du|full review|every (?:row|sheet|page)|exhaustive/.test(documentRequestText(prompt))
-    || count>1&&/phan tich|doi chieu|so sanh|tong hop|analy[sz]|compare|reconcile|synthesi[sz]/.test(documentRequestText(prompt));
+    || count>1&&/phan tich|doi chieu|so sanh|tong hop|\bloc\b|trung khop|analy[sz]|compare|reconcile|synthesi[sz]|\bfilter\b/.test(documentRequestText(prompt));
 }
 export function sourceCoverageIssues(sources:unknown,documents:Array<{name:string}>){
   const normalized=(s:string)=>s.split(/[\\/]/).pop()!.normalize("NFC").trim().toLowerCase();

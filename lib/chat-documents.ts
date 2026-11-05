@@ -21,8 +21,12 @@ function xmlText(xml: Uint8Array) {
 }
 export function inspectDocument(bytes: Uint8Array, name: string, maxCharacters = 60000) {
   const extension = extname(name).toLowerCase();
-  if (textTypes.has(extension)) return new TextDecoder().decode(bytes).slice(0, maxCharacters);
-  if (![".docx", ".xlsx", ".pptx"].includes(extension)) return null;
+  if (textTypes.has(extension)) {
+    const encoding = bytes[0] === 0xff && bytes[1] === 0xfe ? "utf-16le"
+      : bytes[0] === 0xfe && bytes[1] === 0xff ? "utf-16be" : "utf-8";
+    return new TextDecoder(encoding).decode(bytes).replace(/\0/g, "").slice(0, maxCharacters);
+  }
+  if (![".docx", ".xlsx", ".xlsm", ".pptx"].includes(extension)) return null;
   let expanded = 0;
   const zip = unzipSync(bytes, { filter: entry => {
     const relevant = /^(word\/document\.xml|ppt\/slides\/slide\d+\.xml|xl\/(workbook|sharedStrings|worksheets\/sheet\d+)\.xml|xl\/_rels\/workbook\.xml\.rels)$/.test(entry.name);
@@ -31,7 +35,7 @@ export function inspectDocument(bytes: Uint8Array, name: string, maxCharacters =
     if (entry.originalSize > 8 * 1024 ** 2 || expanded > 32 * 1024 ** 2) throw new Error("Document is too large to extract safely; use the computation tool.");
     return true;
   } });
-  if (extension === ".xlsx") return spreadsheetText(zip).slice(0, maxCharacters);
+  if (extension === ".xlsx" || extension === ".xlsm") return spreadsheetText(zip).slice(0, maxCharacters);
   return Object.entries(zip).map(([path,data]) => `[${path}]\n${xmlText(data)}`).join("\n").slice(0,maxCharacters);
 }
 function spreadsheetText(zip: Record<string, Uint8Array>) {
@@ -102,7 +106,8 @@ export async function documentCatalog(conversationId: string) {
 export function selectDocuments(catalog: ChatAttachment[], prompt: string) {
   const lower = prompt.toLowerCase();
   const source=sourceFormatText(prompt);
-  const extensions = ["xlsx","docx","pptx","pdf","csv"].filter(ext => source.includes(ext) || (ext === "xlsx" && /excel/.test(source)) || (ext === "docx" && /word/.test(source)));
+  const extensions = ["xls","xlsx","xlsm","docx","pptx","pdf","csv","tsv"].filter(ext =>
+    new RegExp(`\\b${ext}\\b`).test(source) || (/^xls/.test(ext) && /\bexcel\b/.test(source)) || (ext === "docx" && /word/.test(source)));
   const named = catalog.filter(file => lower.includes(file.name.toLowerCase()) || lower.includes(file.name.toLowerCase().replace(/\.[^.]+$/, "")));
   let candidates = named.length ? named : /\b(original|source)\b|file gốc|tệp gốc/i.test(prompt) ? catalog.filter(file => file.kind === "input") : catalog;
   if(!named.length&&!/\bv(?:ersion)?\s*\d|bản\s+\d/i.test(prompt)&&/phan tich|tong hop|analy[sz]|synthesi[sz]/.test(documentRequestText(prompt))&&candidates.some(f=>f.kind==="input"))candidates=candidates.filter(f=>f.kind==="input");
@@ -142,7 +147,7 @@ export async function prepareDocument(file: ChatAttachment, userId: string, quer
         try{if(pdf.numPages>500)throw new Error("PDF exceeds extraction budget");extracted=(await extractText(pdf,{mergePages:true})).text.slice(0,60000);}finally{await pdf.loadingTask.destroy();}
       }else extracted = inspectDocument(bytes,file.name);
     } catch { extracted = null; }
-    await getDb().update(storedFiles).set({contentHash:hash,extractedText:extracted}).where(eq(storedFiles.url,file.url));
+    await getDb().update(storedFiles).set({contentHash:hash,extractedText:extracted?.replace(/\0/g, "") ?? null}).where(eq(storedFiles.url,file.url));
   }
   return { file, bytes: new Uint8Array(bytes), excerpt: extracted ? relevantExcerpt(extracted,query,5000) : null, cached: record.extractedText !== null, providerFileId: record.providerFileId, providerExpiresAt: record.providerExpiresAt };
 }
