@@ -2,6 +2,7 @@
 export function documentRequestText(value:string){
   return value.normalize("NFD").replace(/\p{M}/gu,"").replace(/[đĐ]/g,"d").toLowerCase()
     .replace(/\b(?:wodr|wrod|wor[dđ])\b/g,"word")
+    .replace(/\b((?:file|tep|ban|xuat|export|sang|thanh|into|to)\s+)\b(?:exce|excell|exel|excle)\b/g,"$1excel")
     .replace(/\b((?:xuat|export|chuyen|convert)(?:\s+(?:ra|sang|thanh|ban|file|tep))*)\s+w\b/g,"$1 word");
 }
 export function outputExtensions(prompt:string){

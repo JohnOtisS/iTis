@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { zipSync, strToU8 } from "fflate";
-import { needsDocumentOutput, requestedExtensions, needsComputation, isImageGeneration } from "../lib/chat-task-policy";
+import { needsDocumentOutput, requestedExtensions, needsComputation, isImageGeneration, fastWordMode } from "../lib/chat-task-policy";
+import { deliverableExtensions, isRequestedDeliverable } from "../lib/document-request";
 import { selectDocuments, versionOutput, inspectDocument, spreadsheetIssues, validateOutput } from "../lib/chat-documents";
 import { relevantExcerpt } from "../lib/chat-context";
 
@@ -21,6 +22,21 @@ assert.equal(needsComputation("Phân tích nội dung hợp đồng",true),false
 assert.equal(isImageGeneration("Vẽ một bức tranh phong cảnh"),true);
 const v1={name:"report.xlsx",url:"/api/files/first.xlsx",family:"first",version:1,kind:"input" as const};
 const v2={name:"report.xlsx",url:"/api/files/second.xlsx",family:"first",version:2,kind:"output" as const};
+const priorWord=[{name:"old-answer.docx"}];
+for(const prompt of [
+  "Phân tích cho tôi dsự khác nhau của iphone 18promax và 15promax xuất ra file exce;",
+  "Xuất bản exce;",
+  "Chuyển file Word sang file Excell.",
+  "Xuất file Exel, không xuất Word.",
+]){
+  assert.equal(needsDocumentOutput(prompt),true,prompt);
+  assert.deepEqual(requestedExtensions(prompt),[".xlsx"],prompt);
+  assert.equal(fastWordMode(prompt,priorWord,false,false),null,prompt);
+  const formats=deliverableExtensions(prompt,priorWord);
+  assert.deepEqual(formats,[".xlsx"],prompt);
+  assert.equal(isRequestedDeliverable("comparison.docx",formats),false,prompt);
+  assert.equal(isRequestedDeliverable("comparison.xlsx",formats),true,prompt);
+}
 assert.deepEqual(selectDocuments([v2,v1],"Sửa file Excel"),[v2]);
 assert.deepEqual(selectDocuments([v2,v1],"So sánh Excel v1 và v2"),[v2,v1]);
 assert.deepEqual(selectDocuments([v2,v1],"Lấy file gốc Excel"),[v1]);

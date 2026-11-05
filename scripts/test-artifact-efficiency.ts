@@ -33,3 +33,6 @@ for(const prompt of ["xuất bản W","xuất wodr","xuất wrod"])assert.equal(
 
 assert.equal(isBlockedArtifactSource("**Chưa thể xuất danh sách vào Excel**: trích đoạn PDF chưa có nhóm cần đối chiếu. Vui lòng gửi nguồn còn thiếu."),true);
 assert.equal(isBlockedArtifactSource("## Kết quả đối chiếu\nDanh sách có 5 người. Thiếu dữ liệu ở một số cột."),false);
+assert.equal(isBlockedArtifactSource("Hãy chọn nút Xuất Word tại câu trả lời cần xuất, hoặc nêu rõ tên tài liệu."),true);
+assert.equal(localArtifactIntent("Chuyển file Word sang file exce;"),null);
+assert.deepEqual(resolveFileReference([plan,{name:"Data.xlsx",url:"sheet"}],"Gửi lại file exce;").files,[{name:"Data.xlsx",url:"sheet"}]);

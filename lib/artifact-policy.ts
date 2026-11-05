@@ -12,7 +12,8 @@ export function documentKind(value: string) {
 export function isBlockedArtifactSource(content: string) {
   const opening = normalizedReference(content.slice(0, 500)).replace(/^[#>*_\s]+/, "");
   return /^(?:(?:toi|minh|i|we) )?(?:chua the|khong the|cannot|can't|could not|couldn't|(?:am|are) unable to|unable to) (?:xuat|tao|lap|loc|doi chieu|hoan tat|hoan thanh|export|create|generate|complete|produce|finish)\b/.test(opening)
-    || /^(?:chua du|thieu) (?:du lieu|thong tin|tai lieu)\b/.test(opening);
+    || /^(?:chua du|thieu) (?:du lieu|thong tin|tai lieu)\b/.test(opening)
+    || /^(?:hay chon nut xuat word|co nhieu ban nhap phu hop|select the answer to export|several drafts match)\b/.test(opening);
 }
 export function localArtifactIntent(prompt: string): "resend"|"export"|null {
   const text=normalizedReference(prompt);
