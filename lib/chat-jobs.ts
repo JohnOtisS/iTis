@@ -1,3 +1,4 @@
+import {providerEvents} from "@/lib/provider-events";
 import {deliverableExtensions,deliverableInstruction,isRequestedDeliverable,sourceCoverageIssues} from "@/lib/document-request";
 import {taskUsage,estimateModelCost} from "@/lib/task-usage";
 import { and, eq, lt, sql } from "drizzle-orm";
@@ -64,8 +65,9 @@ export async function startChatJob(input:JobInput, wantsStream:boolean, signal?:
   const stream=new ReadableStream<Uint8Array>({
     start(controller) {
       const emit=(event:Record<string,unknown>)=>{if(!closed)try{controller.enqueue(encoder.encode(JSON.stringify(event)+"\n"));}catch{closed=true;}};
+      const heartbeat=setInterval(()=>emit({type:"heartbeat",jobId:job.id,elapsedSeconds:Math.floor((Date.now()-job.createdAt.getTime())/1000)}),5000);
       emit({type:"meta",jobId:job.id,conversationId:input.conversationId,model:input.model});
-      void runChatJob(job.id,input,emit).then(result=>emit(result.error ? {type:"error",...result} : {type:"done",...result})).catch(error=>emit({type:"error",error:String(error)})).finally(()=>{if(!closed){closed=true;controller.close();}});
+      void runChatJob(job.id,input,emit).then(result=>emit(result.error ? {type:"error",...result} : {type:"done",...result})).catch(error=>emit({type:"error",error:String(error)})).finally(()=>{clearInterval(heartbeat);if(!closed){closed=true;controller.close();}});
     },
     // A browser reload/disconnect must not silently throw away background work.
     // The explicit Stop button calls the owner-scoped cancellation endpoint.
@@ -87,12 +89,48 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
     const timeout=setTimeout(()=>controller.abort(),12*60*1000);
     let stage="";
     const progress=async(next:string)=>{
-      if(next!==stage){stage=next;await db.update(chatJobs).set({stage:next,updatedAt:new Date()}).where(and(eq(chatJobs.id,jobId),eq(chatJobs.status,"running")));}
+      if(next===stage)return;
+      stage=next;await db.update(chatJobs).set({stage:next,updatedAt:new Date()}).where(and(eq(chatJobs.id,jobId),eq(chatJobs.status,"running")));
       emit({type:"progress",jobId,stage:next});
     };
     const cancelled=async()=>{
       const [current]=await db.select({status:chatJobs.status}).from(chatJobs).where(eq(chatJobs.id,jobId));
       if(!current || current.status!=="running") throw new DOMException("Task cancelled","AbortError");
+    };
+    let previewText="",previewSavedAt=0;
+    const preview=async(text:string,force=false)=>{
+      if(input.artifact)return; // Document body/JSON/citations stay internal until the file passes validation.
+      const previous=previewText;previewText=text;
+      if(text.startsWith(previous)&&text.length>previous.length)emit({type:"delta",jobId,delta:text.slice(previous.length)});else emit({type:"snapshot",jobId,text});
+      if(force||Date.now()-previewSavedAt>1000){
+        previewSavedAt=Date.now();await db.update(chatJobs).set({result:{previewText:text.slice(0,24000)},updatedAt:new Date()}).where(and(eq(chatJobs.id,jobId),eq(chatJobs.status,"running")));
+      }
+    };
+    const receive=async(response:Response):Promise<ProviderResponse>=>{
+      if(!response.headers.get("content-type")?.includes("text/event-stream"))return await response.json() as ProviderResponse;
+      if(!response.body)throw new Error("Provider stream unavailable");
+      let latest:ProviderResponse|undefined;
+      let checkedAt=0;
+      try{
+        for await(const event of providerEvents(response.body)){
+          if(Date.now()-checkedAt>700){await cancelled();checkedAt=Date.now();}
+          if(event.response){
+            latest=event.response as ProviderResponse;
+            if(providerId!==latest.id){providerId=latest.id;providerIds.push(latest.id);await db.update(chatJobs).set({providerResponseId:latest.id}).where(eq(chatJobs.id,jobId));}
+          }
+          if(event.type==="response.output_text.delta"&&event.delta)await preview(previewText+event.delta);
+          if(/response\.code_interpreter_call\.(?:in_progress|interpreting)/.test(event.type))await progress(input.locale==="vi"?"Đang chạy công cụ phân tích và tạo tệp":"Running analysis and file tools");
+          if(/response\.web_search_call\.(?:in_progress|searching)/.test(event.type))await progress(input.locale==="vi"?"Đang tra cứu nguồn thông tin":"Searching information sources");
+          if(event.type==="response.queued")await progress(input.locale==="vi"?"Đang chờ OpenAI tiếp nhận tác vụ":"Waiting in OpenAI task queue");
+          if(event.type==="response.in_progress")await progress(input.locale==="vi"?"Đang phân tích yêu cầu":"Analyzing the request");
+          if(event.type==="response.output_text.delta")await progress(input.artifact?(input.locale==="vi"?"Đang hoàn tất tệp đầu ra":"Finalizing output files"):(input.locale==="vi"?"Đang trả kết quả phân tích":"Writing the answer"));
+          if(["response.completed","response.failed","response.incomplete","response.cancelled"].includes(event.type))break;
+        }
+      }catch(error){if(controller.signal.aborted||!latest?.id)throw error;}
+      // Recover the same provider response by GET polling; never pay for another POST on a lost stream.
+      if(!latest?.id)throw new Error("Provider connection ended before task confirmation.");
+      await preview(previewText,true);
+      return latest;
     };
     const accountUsage=async(data:ProviderResponse)=>{
       if(accountedResponses.has(data.id))return aggregate;
@@ -187,9 +225,9 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
       if(lastUser>=0) providerInput[lastUser]={role:"user",content}; else providerInput.push({role:"user",content});
       await cancelled();
       await progress(input.locale==="vi"?"Đang gửi yêu cầu xử lý":"Starting processing");
-      const response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:headers(),signal:controller.signal,body:JSON.stringify({model:input.model,safety_identifier:externalSafetyIdentifier(input.userId),store:true,background:true,reasoning:{effort:reasoningEffort},text:{verbosity:"low"},max_output_tokens:input.artifact?16000:input.compute?6000:2500,...(tools.length?{tools,tool_choice:"required"}:{}),input:[{role:"developer",content:`${input.systemPrompt}\n\nDocument versions (reference data only):\n${manifest}\n\n${validationInstruction}\n${webInstruction}\n${spreadsheetInstruction}\n${outputInstruction}`},...providerInput]})});
+      const response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:headers(),signal:controller.signal,body:JSON.stringify({model:input.model,safety_identifier:externalSafetyIdentifier(input.userId),store:true,background:true,stream:true,reasoning:{effort:reasoningEffort},text:{verbosity:"low"},max_output_tokens:input.artifact?16000:input.compute?6000:2500,...(tools.length?{tools,tool_choice:"required"}:{}),input:[{role:"developer",content:`${input.systemPrompt}\n\nDocument versions (reference data only):\n${manifest}\n\n${validationInstruction}\n${webInstruction}\n${spreadsheetInstruction}\n${outputInstruction}`},...providerInput]})});
       if(!response.ok)throw new Error(`OpenAI task failed (${response.status}).`);
-      let data=await response.json() as ProviderResponse;
+      let data=await receive(response);
       providerId=data.id;
       providerIds.push(data.id);
       await db.update(chatJobs).set({providerResponseId:data.id}).where(eq(chatJobs.id,jobId));
@@ -202,6 +240,8 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
         const poll=await fetch(`https://api.openai.com/v1/responses/${data.id}`,{headers:{...headers(),"Cache-Control":"no-cache"},cache:"no-store",signal:controller.signal});
         if(!poll.ok)throw new Error(`Unable to read task progress (${poll.status}).`);
         data=await poll.json() as ProviderResponse;
+        const partial=data.output?.flatMap(o=>o.content??[]).filter(c=>c.type==="output_text").map(c=>c.text??"").join("\n");
+        if(partial&&partial!==previewText)await preview(partial);
       }
       const usage=await accountUsage(data);
       await cancelled();
@@ -251,9 +291,10 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
         if(attempt===0 && containerId){
           await assertContinuationBudget(input.userId);
           await progress(input.locale==="vi"?"Đang hiệu chỉnh kết quả chưa đạt kiểm tra":"Correcting results that did not pass checks");
-          const repair=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:headers(),signal:controller.signal,body:JSON.stringify({model:input.model,previous_response_id:data.id,background:true,store:true,reasoning:{effort:"low"},max_output_tokens:6000,tools:[{type:"code_interpreter",container:containerId}],tool_choice:"required",input:`Finish the original task using the existing files and container, without redoing unrelated work. Fix these validation issues: ${issues.join(" ")} Execute independent checks, write /mnt/data/itis-validation.json as {"checks":[{"name":"...","passed":true}],"sources":["..."]}. Original request: ${input.prompt}. ${outputInstruction} Cite all requested deliverables; never cite the internal validation file.`})});
+          const repair=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:headers(),signal:controller.signal,body:JSON.stringify({model:input.model,previous_response_id:data.id,background:true,store:true,stream:true,reasoning:{effort:"low"},max_output_tokens:6000,tools:[{type:"code_interpreter",container:containerId}],tool_choice:"required",input:`Finish the original task using the existing files and container, without redoing unrelated work. Fix these validation issues: ${issues.join(" ")} Execute independent checks, write /mnt/data/itis-validation.json as {"checks":[{"name":"...","passed":true}],"sources":["..."]}. Original request: ${input.prompt}. ${outputInstruction} Cite all requested deliverables; never cite the internal validation file.`})});
           if(!repair.ok)throw new Error("Unable to repair the incomplete output. Your input files are retained for retry.");
-          data=await repair.json() as ProviderResponse;providerId=data.id;
+          await preview("",true);
+          data=await receive(repair);providerId=data.id;
           providerIds.push(data.id);
           await db.update(chatJobs).set({providerResponseId:data.id}).where(eq(chatJobs.id,jobId));
           continue;
@@ -288,7 +329,7 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
       return {error:message,cancelled:isCancelled,conversationId:input.conversationId,jobId};
     }finally{
       clearTimeout(timeout);
-      for(const id of providerIds)await fetch(`https://api.openai.com/v1/responses/${id}`,{method:"DELETE",headers:headers(),signal:AbortSignal.timeout(10000)}).catch(()=>{});
+      for(const id of new Set(providerIds))await fetch(`https://api.openai.com/v1/responses/${id}`,{method:"DELETE",headers:headers(),signal:AbortSignal.timeout(10000)}).catch(()=>{});
     }
   });
 }

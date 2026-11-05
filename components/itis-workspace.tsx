@@ -1,4 +1,5 @@
 "use client";
+import {upsertReply} from "@/lib/provider-events";
 import {readChatEvents} from "@/lib/chat-stream";
 import {taskFailureText} from "@/lib/task-failure";
 
@@ -372,6 +373,12 @@ export function ItisWorkspace({
   const [taskFailure,setTaskFailure]=useState<{conversationId:string;message:string}|null>(null);
   const [retryableTask, setRetryableTask] = useState<{prompt:string;conversationId:string}|null>(null);
   const activeJobRef = useRef<string | null>(null);
+  const streamMessageRef=useRef<string|null>(null);
+  const deliveredJobRef=useRef<string|null>(null);
+  const liveConversationRef=useRef<string|null>(null);
+  const conversationRef=useRef(conversationId);conversationRef.current=conversationId;
+  const [taskElapsed,setTaskElapsed]=useState(0);
+  useEffect(()=>{if(!sending)return;const timer=setInterval(()=>setTaskElapsed(n=>n+1),1000);return ()=>clearInterval(timer);},[sending]);
   const [loggingOut, setLoggingOut] = useState(false);
   const [deletingConversationId, setDeletingConversationId] = useState<
     string | null
@@ -381,6 +388,7 @@ export function ItisWorkspace({
   const [historySearchResults, setHistorySearchResults] = useState<Conversation[] | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
+  useEffect(()=>()=>{requestAbortRef.current?.abort();},[]);
 
   const displayName = account?.user.name ?? user.displayName;
   const locale: AppLocale = account?.user.locale ?? user.locale ?? "en";
@@ -571,6 +579,8 @@ export function ItisWorkspace({
   }
 
   async function loadConversation(id: string, navigate = true) {
+    if(navigate&&id!==conversationRef.current){requestAbortRef.current?.abort();requestAbortRef.current=null;activeJobRef.current=null;streamMessageRef.current=null;liveConversationRef.current=null;setSending(false);}
+
     setLoadingConversation(true);
     try {
       const response = await fetch(`/api/conversations/${id}`, {
@@ -593,6 +603,7 @@ export function ItisWorkspace({
       };
       if (!response.ok || !data.conversation)
         throw new Error(data.error || t("Unable to load conversation history.", "Không tải được lịch sử."));
+      if(requestAbortRef.current&&liveConversationRef.current===id)return;
       setConversationId(id);
       setMessages(
         (data.messages ?? [])
@@ -624,6 +635,7 @@ export function ItisWorkspace({
   }
 
   function startNewChat() {
+    requestAbortRef.current?.abort();requestAbortRef.current=null;activeJobRef.current=null;streamMessageRef.current=null;liveConversationRef.current=null;setSending(false);
     setConversationId(null);
     setMessages([]);
     setPrompt("");
@@ -725,6 +737,7 @@ export function ItisWorkspace({
   }, [account?.user.imageProvider, router, view]);
 
   useEffect(() => {
+    if(requestAbortRef.current&&liveConversationRef.current===initialConversationId)return;
     setView(initialView);
     setConversationId(initialConversationId);
     void loadData();
@@ -777,36 +790,58 @@ export function ItisWorkspace({
     requestAbortRef.current?.abort();
   }
 
+  // Watch the durable task even while SSE is healthy. Completion must not depend on one connection.
   useEffect(() => {
-    if (!conversationId || requestAbortRef.current) return;
-    let disposed=false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    async function recover() {
-      const response=await fetch(`/api/chat/jobs?conversationId=${conversationId}`,{cache:"no-store"});
-      if(!response.ok||disposed)return;
-      const data=await response.json() as {jobs:Array<{id:string;status:string;error?:string|null;sourcePrompt?:string|null}>};
-      const active=data.jobs.find(job=>job.status==="running");
-      if(disposed)return;
-      if(!active){const latest=data.jobs[0];if(latest&&["failed","cancelled"].includes(latest.status)){if(latest.sourcePrompt)setRetryableTask({prompt:latest.sourcePrompt,conversationId:conversationId!});setTaskFailure({conversationId:conversationId!,message:taskFailureText(latest.error||t("Task stopped.","Tác vụ đã dừng."),locale==="vi")});}else{setTaskFailure(null);setRetryableTask(null);}return;}
-      activeJobRef.current=active.id;setSending(true);
-      async function poll(){
-        try {
-          const result=await fetch(`/api/chat/jobs/${active!.id}`,{cache:"no-store"});
-          const data=await result.json() as {job?:{status:string;stage:string;error?:string}};
-          if(disposed)return;
-          if(data.job?.status==="running"){setTaskStage(data.job.stage);timer=setTimeout(()=>void poll(),1500);return;}
-          setSending(false);setTaskStage("");activeJobRef.current=null;
-          if(data.job?.error){setTaskFailure({conversationId:conversationId!,message:taskFailureText(data.job.error,locale==="vi")});if(active!.sourcePrompt)setRetryableTask({prompt:active!.sourcePrompt,conversationId:conversationId!});}
-          await loadConversation(conversationId!,false);await loadData();
-        }catch{if(!disposed)timer=setTimeout(()=>void poll(),3000);}
-      }
-      void poll();
+    if(!conversationId)return;
+    const chatId=conversationId,controller=new AbortController();let disposed=false;
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    const schedule=()=>{if(!disposed)timer=setTimeout(()=>void poll(),1500);};
+    const get=async(path:string)=>{
+      const response=await fetch(path,{cache:"no-store",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(8000)])});
+      if(!response.ok)throw new Error("Task status unavailable");return response.json();
+    };
+    type Job={id:string;conversationId?:string;status:string;stage:string;error?:string|null;sourcePrompt?:string|null;result?:{previewText?:string;text?:string;messageId?:string;model?:string;attachments?:ChatAttachment[];usage?:Partial<import("@/lib/task-usage").TaskUsage>}|null};
+    async function poll(){
+      try{
+        let job:Job|undefined;
+        if(activeJobRef.current)job=((await get(`/api/chat/jobs/${activeJobRef.current}`)) as {job?:Job}).job;
+        if(job?.conversationId&&job.conversationId!==chatId){job=undefined;activeJobRef.current=null;streamMessageRef.current=null;}
+        if(!job){
+          const list=(await get(`/api/chat/jobs?conversationId=${chatId}`)) as {jobs:Job[]};
+          job=list.jobs.find(j=>j.status==="running");
+          if(!job&&requestAbortRef.current){schedule();return;} // POST may still be saving the task.
+          job??=list.jobs[0];
+        }
+        if(disposed||conversationRef.current!==chatId)return;
+        if(!job){setTaskFailure(null);setRetryableTask(null);return;}
+        if(job.status==="running"){
+          activeJobRef.current=job.id;setSending(true);setTaskStage(job.stage);
+          const text=job.result?.previewText;
+          if(text){const id=streamMessageRef.current??`stream-${job.id}`;streamMessageRef.current=id;
+            setMessages(items=>{const old=items.find(m=>m.id===id);if(old&&old.content.length>text.length)return items;
+              return upsertReply(items,{...old,id,role:"assistant",model:old?.model??"OpenAI",content:text,tokens:0,createdAt:old?.createdAt??new Date().toISOString()} as Msg,id);});}
+          schedule();return;
+        }
+        if(job.status==="completed"&&deliveredJobRef.current===job.id)return;
+        const result=job.result;
+        if(job.status==="completed"&&result?.messageId){
+          deliveredJobRef.current=job.id;
+          const id=streamMessageRef.current??`stream-${job.id}`;
+          setMessages(items=>upsertReply(items,{id:result.messageId,role:"assistant",model:shortModelLabel(result.model),content:result.text??"",attachments:result.attachments??[],tokens:result.usage?.total_tokens??0,taskUsage:result.usage,createdAt:new Date().toISOString()} as Msg,id));
+          setTaskFailure(null);setRetryableTask(null);
+        }else if(["failed","cancelled"].includes(job.status)){
+          setTaskFailure({conversationId:chatId,message:taskFailureText(job.error||t("Task stopped.","Tác vụ đã dừng."),locale==="vi")});
+          if(job.sourcePrompt)setRetryableTask({prompt:job.sourcePrompt,conversationId:chatId});
+        }
+        activeJobRef.current=null;requestAbortRef.current?.abort();requestAbortRef.current=null;
+        setSending(false);setTaskStage("");
+        await loadConversation(chatId,false);void loadData();
+      }catch{schedule();}
     }
-    void recover().catch(()=>{});
-    return ()=>{disposed=true;if(timer)clearTimeout(timer);};
-    // Recovery runs on navigation/reload; a live send already owns its stream.
+    void poll();
+    return ()=>{disposed=true;controller.abort();if(timer)clearTimeout(timer);};
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[conversationId]);
+  },[conversationId,sending]);
 
   async function send(text = prompt, options: { displayUser?: boolean; regenerate?: boolean; conversationIdOverride?: string; ignoreAttachment?: boolean } = {}) {
     const clean = text.trim() || (attachedFiles.length && !options.ignoreAttachment
@@ -815,7 +850,7 @@ export function ItisWorkspace({
     if (!clean || sending) return;
     const invalidUpload=uploadError(options.ignoreAttachment?[]:attachedFiles,account?.system.uploadLimits??defaultUploadLimits,locale==="vi");
     if(invalidUpload){setDataError(invalidUpload);return;}
-    setTaskStage("");
+    setTaskStage("");setTaskElapsed(0);streamMessageRef.current=null;
     setRetryableTask(null);setTaskFailure(null);
     const displayUser = options.displayUser !== false;
     const pendingAttachments = options.ignoreAttachment ? [] : attachedFiles.map((file) => ({
@@ -841,6 +876,7 @@ export function ItisWorkspace({
     requestAbortRef.current = abortController;
     let streamedMessageId: string | null = null;
     let retryConversationId=options.conversationIdOverride??conversationId;
+    liveConversationRef.current=retryConversationId;
     try {
       const form = new FormData();
       form.set("prompt", clean);
@@ -863,7 +899,7 @@ export function ItisWorkspace({
       }
       if (response.ok && responseType.includes("application/x-ndjson") && response.body) {
         const temporaryId = `stream-${crypto.randomUUID()}`;
-        streamedMessageId = temporaryId;
+        streamedMessageId = temporaryId;streamMessageRef.current=temporaryId;
         setMessages((current) => [...current, {
           id: temporaryId,
           role: "assistant",
@@ -873,7 +909,7 @@ export function ItisWorkspace({
           createdAt: new Date().toISOString(),
         }]);
         type ChatEvent = {
-              type: "meta" | "delta" | "done" | "error" | "progress";
+              type: "meta" | "delta" | "done" | "error" | "progress" | "snapshot" | "heartbeat";
               jobId?: string;
               stage?: string;
               attachments?: ChatAttachment[];
@@ -889,7 +925,8 @@ export function ItisWorkspace({
         for await (const event of readChatEvents<ChatEvent>(response.body)) {
             if (event.jobId) activeJobRef.current=event.jobId;
             if (event.type === "meta" && event.model) setMessages(current=>current.map(item=>item.id===temporaryId?{...item,model:shortModelLabel(event.model)}:item));
-            if (event.conversationId) retryConversationId=event.conversationId;
+            if (event.conversationId){retryConversationId=event.conversationId;liveConversationRef.current=event.conversationId;}
+            if(event.type==="snapshot")setMessages(items=>upsertReply(items,{id:temporaryId,role:"assistant",content:event.text??"",model:shortModelLabel(event.model),tokens:0,createdAt:new Date().toISOString()} as Msg,temporaryId));
             if (event.type === "progress" && event.stage) setTaskStage(event.stage);
             if (event.type === "meta" && event.conversationId && event.conversationId !== conversationId) {
               setConversationId(event.conversationId);
@@ -901,17 +938,8 @@ export function ItisWorkspace({
                 : item));
             }
             if (event.type === "done") {
-              setMessages((current) => current.map((item) => item.id === temporaryId
-                ? {
-                    ...item,
-                    id:event.messageId??item.id,
-                    content: event.text ?? item.content,
-                    taskUsage:event.usage,
-                    model: shortModelLabel(event.model),
-                    tokens: event.usage?.total_tokens ?? item.tokens,
-                    attachments: event.attachments ?? item.attachments,
-                  }
-                : item));
+              if(event.jobId)deliveredJobRef.current=event.jobId;
+              setMessages(items=>upsertReply(items,{id:event.messageId??temporaryId,role:"assistant",content:event.text??items.find(m=>m.id===temporaryId)?.content??"",model:shortModelLabel(event.model),tokens:event.usage?.total_tokens??0,taskUsage:event.usage,attachments:event.attachments??[],createdAt:new Date().toISOString()} as Msg,temporaryId));
               if (event.conversationId && event.conversationId !== conversationId) {
                 router.replace(`/chat/${event.conversationId}`);
               }
@@ -986,10 +1014,10 @@ export function ItisWorkspace({
         },
       ]);
     } finally {
-      requestAbortRef.current = null;
-      activeJobRef.current = null;
-      setTaskStage("");
-      setSending(false);
+      if(requestAbortRef.current===abortController){
+        requestAbortRef.current=null;liveConversationRef.current=null;activeJobRef.current=null;
+        setTaskStage("");setSending(false);
+      }
       await loadData();
     }
   }
@@ -1298,7 +1326,7 @@ export function ItisWorkspace({
             setPrompt={setPrompt}
             send={send}
             sending={sending || loadingConversation}
-            taskStage={taskStage}
+            taskStage={taskStage+(sending&&taskElapsed>2?` · ${taskElapsed}s`:"")}
             taskFailure={taskFailure?.conversationId===conversationId?taskFailure.message:undefined}
             retryTask={retryableTask && retryableTask.conversationId===conversationId ? ()=>void send(retryableTask.prompt,{displayUser:false,regenerate:true,conversationIdOverride:retryableTask.conversationId,ignoreAttachment:true}) : undefined}
             stopGenerating={stopGenerating}
