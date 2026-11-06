@@ -16,7 +16,9 @@ The public GitHub repository needs no server SSH key or database/API credential.
 GitHub Actions runs lint/build for pushes to main. The server fetches main every
 minute, verifies a successful `iTis CI` run for the exact SHA, builds an isolated
 release, saves a pre-migration database dump, applies migrations and switches the
-current symlink. A failed health check restores the previous code release.
+current symlink. After a successful health check, cleanup retains the running
+release and the previous release for rollback. A failed health check restores
+the previous code release.
 Database migrations are not automatically downgraded; design them compatibly.
 
 Discord receives start/success/failure status from the server. Its webhook and

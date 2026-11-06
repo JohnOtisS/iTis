@@ -11,7 +11,7 @@ unset DISCORD_DEPLOY_WEBHOOK
 notify(){ node --env-file="$ROOT/shared/deploy.env" "$ROOT/deployment/notify.mjs" "$@"; }
 ITIS_PUBLIC_URL="$(node --env-file="$ROOT/shared/deploy.env" -e 'process.stdout.write(process.env.ITIS_PUBLIC_URL)')"
 RELEASE="$ROOT/releases/$SHA"
-PREVIOUS="$(readlink -f "$ROOT/current" 2>/dev/null || true)"
+PREVIOUS="$(readlink -e "$ROOT/current" 2>/dev/null || true)"
 SWITCHED=0
 fail(){
   code=$?
@@ -38,7 +38,11 @@ for attempt in $(seq 1 40); do
   if curl --fail --silent http://127.0.0.1:15173/api/health | grep -q "$SHA"; then
     "$PM2" save > /dev/null
     printf '%s\n' "$SHA" > "$ROOT/shared/deployed-sha"
-    notify "🟢 iTis deploy nội bộ thành công commit ${SHA:0:8}; health check đạt. Địa chỉ public cấu hình: ${ITIS_PUBLIC_URL}; khả năng truy cập Internet cần được kiểm tra riêng."
+    SWITCHED=0
+    if ! bash "$ROOT/deployment/prune-releases.sh" "$ROOT" "$PREVIOUS"; then
+      echo 'Release cleanup failed. The healthy release stays active.' >&2
+    fi
+    notify "🟢 iTis deploy nội bộ thành công commit ${SHA:0:8}; health check đạt. Địa chỉ public cấu hình: ${ITIS_PUBLIC_URL}; khả năng truy cập Internet cần được kiểm tra riêng." || echo 'Unable to send deployment notification.' >&2
     exit 0
   fi
   sleep 1
