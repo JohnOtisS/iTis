@@ -20,7 +20,7 @@ import { externalSafetyIdentifier } from "@/lib/privacy";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { buildChatContext } from "@/lib/chat-context";
 import { documentCatalog, namedDocuments, selectDocuments } from "@/lib/chat-documents";
-import { fastWordMode, isDocumentEditFollowup, isImageGeneration, needsComputation, needsDocumentOutput, needsWebSearch } from "@/lib/chat-task-policy";
+import { chatResponseTokenLimit, fastWordMode, isDocumentEditFollowup, isImageGeneration, needsComputation, needsDocumentOutput, needsWebSearch } from "@/lib/chat-task-policy";
 import { startChatJob } from "@/lib/chat-jobs";
 import { assertContinuationBudget } from "@/lib/token-budget";
 
@@ -400,6 +400,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
           let requestId: string | null = null;
           let estimatedCostUsd = 0;
           let completed = false;
+            let outputLimited = false;
           emit({
             type: "meta", model, provider: systemProvider,
             conversationId: conversation.id, conversationTitle: conversation.title,
@@ -450,7 +451,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
                   model, safety_identifier: externalSafetyIdentifier(user.id), store: false,
                   reasoning: { effort: model === "gpt-6.1-sol" ? "medium" : "low" },
                   text: { verbosity: "low" },
-                  max_output_tokens: webSearchTask ? (model === "gpt-6.1-sol" ? 1400 : 800) : model === "gpt-6.1-sol" ? 2200 : 900,
+                  max_output_tokens: chatResponseTokenLimit(prompt,history,model),
                   ...(tools.length ? { tools, tool_choice: "required" } : {}),
                   stream: true,
                   input: prepareOpenAiHistory([{ role: "developer", content: systemPrompt + webSearchInstruction + `\n\n${context.contextNote}` }, ...history]),
@@ -477,7 +478,11 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
                   usageAvailable=Boolean(payload?.usage);
                   completed = terminal.completed;
                 }
-                if (event.type === "response.incomplete")throw new Error("OUTPUT_LIMIT");
+                if (event.type === "response.incomplete") {
+                  const payload = event.response as OpenAiPayload | undefined;
+                  if(payload?.incomplete_details?.reason!=="max_output_tokens")throw new Error("OUTPUT_LIMIT");
+                  outputLimited = true;
+                }
                 if (event.type === "response.failed" || event.type === "error") {
                   throw new Error(String(event.message ?? "OpenAI stream failed."));
                 }
@@ -486,13 +491,19 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
               estimatedCostUsd=estimateModelCost(model,{input_tokens:input,output_tokens:output,input_tokens_details:{cached_tokens:cached,cache_write_tokens:cacheWrite}});
             }
 
+            if(outputLimited){
+              if(!text.trim())throw new Error("OUTPUT_LIMIT");
+              const notice=t("\n\n*This answer is incomplete because the output limit was reached. Send “Continue” to finish it.*","\n\n*Phần trả lời chưa hoàn tất do chạm giới hạn đầu ra. Nhắn “Tiếp tục” để viết phần còn lại.*");
+              text+=notice;
+              emit({type:"delta",delta:notice});
+            }
             if (text.trim()) {
               await getDb().transaction(async (tx) => {
                 const [answer]=await tx.insert(messages).values({ conversationId: conversation.id, role: "assistant", content: text.trim(), model, tokenCount: output, taskUsage:taskUsage({input_tokens:input,output_tokens:output,input_tokens_details:{cached_tokens:cached,cache_write_tokens:cacheWrite},output_tokens_details:{reasoning_tokens:reasoning}},{estimated_cost_usd:estimatedCostUsd,usage_complete:usageAvailable}), attachments: [] }).returning({id:messages.id});messageId=answer.id;
                 await tx.insert(usageEvents).values({
                   userId: user.id, conversationId: conversation.id, requestId, model,
                   inputTokens: input, cachedTokens: cached, reasoningTokens: reasoning, outputTokens: output,
-                  toolDetails:{usageAvailable,cacheWriteTokens:cacheWrite},estimatedCostUsd: estimatedCostUsd.toFixed(8), routerReason: completed ? routerReason : `${routerReason}_stopped`,
+                  toolDetails:{usageAvailable,cacheWriteTokens:cacheWrite},estimatedCostUsd: estimatedCostUsd.toFixed(8), routerReason: completed ? routerReason : `${routerReason}_${outputLimited?"incomplete":"stopped"}`,
                 });
                 await tx.update(conversations).set({ contextTokens: sql`(select coalesce(sum(chat_messages.token_count), 0) from ${messages} chat_messages where chat_messages.conversation_id = ${conversation.id})`, updatedAt: new Date() }).where(eq(conversations.id, conversation.id));
               });usageRecorded=true;
@@ -654,7 +665,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
         model, safety_identifier: externalSafetyIdentifier(user.id), store: false,
         reasoning: { effort: artifactTask ? "low" : model === "gpt-6.1-sol" ? "medium" : "low" },
         text: { verbosity: "low" },
-        max_output_tokens: artifactTask ? 16000 : webSearchTask ? (model === "gpt-6.1-sol" ? 1600 : 900) : model === "gpt-6.1-sol" ? 2500 : 1000,
+        max_output_tokens: artifactTask ? 16000 : chatResponseTokenLimit(prompt,history,model),
         ...(tools.length ? { tools, tool_choice: "required" } : {}),
         input: prepareOpenAiHistory([{
           role: "developer",
@@ -676,6 +687,9 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
     reasoning = data.usage?.output_tokens_details?.reasoning_tokens ?? 0;
     estimatedCostUsd=estimateModelCost(model,data.usage??{});
     text = data.output_text ?? data.output?.flatMap((item) => item.content ?? []).filter((item) => item.type === "output_text").map((item) => item.text ?? "").join("\n") ?? "";
+    if(data.status==="incomplete"&&data.incomplete_details?.reason==="max_output_tokens"&&text.trim()){
+      text+=t("\n\n*This answer is incomplete because the output limit was reached. Send “Continue” to finish it.*","\n\n*Phần trả lời chưa hoàn tất do chạm giới hạn đầu ra. Nhắn “Tiếp tục” để viết phần còn lại.*");
+    }
     // Account for provider usage even if a generated file exceeds storage quota.
     requestId = response.headers.get("x-request-id");
     await getDb().insert(usageEvents).values({ userId: user.id, model, requestId, inputTokens: input, cachedTokens: cached, reasoningTokens: reasoning, outputTokens: output, estimatedCostUsd: estimatedCostUsd.toFixed(8), routerReason });

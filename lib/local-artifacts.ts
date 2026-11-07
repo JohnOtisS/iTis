@@ -5,7 +5,7 @@ import {conversations,messages,users} from "@/db/schema";
 import {documentCatalog,validateOutput,versionOutput} from "@/lib/chat-documents";
 import {readChatFile,saveChatFile,type ChatAttachment} from "@/lib/chat-files";
 import {buildWord,wordDraftSchema} from "@/lib/word-fast";
-import {documentKind,isBlockedArtifactSource,localArtifactIntent,resolveFileReference} from "@/lib/artifact-policy";
+import {documentKind,isBlockedArtifactSource,localArtifactIntent,pastedWordExportSource,resolveFileReference} from "@/lib/artifact-policy";
 import {taskUsage} from "@/lib/task-usage";
 
 export function markdownWordDraft(content:string) {
@@ -43,6 +43,9 @@ async function performLocalArtifactAction(input:LocalInput) {
   const db=getDb();
   const intent=input.sourceMessageId?"export":localArtifactIntent(input.prompt);
   if(!intent)return null;
+  // Let the document pipeline handle a new pasted request. Historical pasted
+  // drafts below can be exported exactly without another model call.
+  if(!input.sourceMessageId && pastedWordExportSource(input.prompt))return null;
   const [owned]=await db.select({id:conversations.id}).from(conversations).where(and(eq(conversations.id,input.conversationId),eq(conversations.userId,input.userId)));
   if(!owned)throw new Error("ARTIFACT_SOURCE_NOT_FOUND");
   let catalog=await documentCatalog(input.conversationId);
@@ -57,13 +60,23 @@ async function performLocalArtifactAction(input:LocalInput) {
     // Do not substitute a different format when a request contains several targets.
     const format=input.format??(/markdown|\.md\b/i.test(input.prompt)?"md":/\.txt\b/i.test(input.prompt)?"txt":"docx");
     if(!input.sourceMessageId&&/pdf|excel|xlsx|pptx|powerpoint|csv/i.test(input.prompt))return null;
-    const sources=await db.select().from(messages).where(and(eq(messages.conversationId,input.conversationId),eq(messages.role,"assistant"),input.sourceMessageId?eq(messages.id,input.sourceMessageId):undefined)).orderBy(desc(messages.createdAt),desc(messages.id)).limit(input.sourceMessageId?1:80);
+    const rows=await db.select().from(messages).where(and(eq(messages.conversationId,input.conversationId),input.sourceMessageId?eq(messages.role,"assistant"):undefined,input.sourceMessageId?eq(messages.id,input.sourceMessageId):undefined)).orderBy(desc(messages.createdAt),desc(messages.id)).limit(input.sourceMessageId?1:80);
+    const sources=rows.flatMap((row,index)=>{
+      if(row.role==="assistant")return [row];
+      const content=row.role==="user"?pastedWordExportSource(row.content):null;
+      if(content && rows.slice(0,index).some(newer=>newer.role==="user" && !localArtifactIntent(newer.content)))return [];
+      return content?[{...row,content}]:[];
+    });
     let source:typeof sources[number]|undefined=sources[0];
     const blockedSources = new Set(sources.filter(answer => !answer.attachments.length && isBlockedArtifactSource(answer.content)).map(answer => answer.id));
     const isBlockedExport = (file: ChatAttachment) => Boolean(file.sourceMessageId && blockedSources.has(file.sourceMessageId));
     catalog = catalog.filter(file => !isBlockedExport(file));
+    if(!input.sourceMessageId && source && blockedSources.has(source.id)){
+      source=sources.find(answer=>answer.role==="user");
+      if(!source)source=sources[0];
+    }
     if(source && (blockedSources.has(source.id) || source.attachments.some(isBlockedExport))){
-      if(!input.sourceMessageId && catalog.some(file=>file.kind!=="output"))return null;
+      if(!input.sourceMessageId && (catalog.some(file=>file.kind!=="output") || rows.some(row=>row.role==="user"&&pastedWordExportSource(row.content))))return null;
       throw new Error("ARTIFACT_SOURCE_BLOCKED");
     }
     if(!input.sourceMessageId){

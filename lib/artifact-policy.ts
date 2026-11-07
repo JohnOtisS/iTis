@@ -11,10 +11,16 @@ export function documentKind(value: string) {
 }
 
 export function isBlockedArtifactSource(content: string) {
-  const opening = normalizedReference(content.slice(0, 500)).replace(/^[#>*_\s]+/, "");
-  return /^(?:(?:toi|minh|i|we) )?(?:chua the|khong the|cannot|can't|could not|couldn't|(?:am|are) unable to|unable to) (?:xuat|tao|lap|loc|doi chieu|hoan tat|hoan thanh|export|create|generate|complete|produce|finish)\b/.test(opening)
+  const opening = normalizedReference(content.slice(0, 500)).replace(/^[#>*_\s]+/, "").replace(/^(?:hien tai|currently)[, ]+/, "");
+  return /^(?:(?:toi|minh|i|we) )?(?:chua the|khong the|cannot|can't|could not|couldn't|(?:am|are) unable to|unable to) (?:xuat|tao|lap|loc|doi chieu|hoan tat|hoan thanh|dinh kem|export|create|generate|complete|produce|finish|attach)\b/.test(opening)
     || /^(?:chua du|thieu) (?:du lieu|thong tin|tai lieu)\b/.test(opening)
     || /^(?:hay chon nut xuat word|co nhieu ban nhap phu hop|select the answer to export|several drafts match)\b/.test(opening);
+}
+export function pastedWordExportSource(prompt: string) {
+  if (localArtifactIntent(prompt) !== "export" || prompt.length < 160 || prompt.split(/\r?\n/).length < 4) return null;
+  const instruction = /\b(?:xuất|xuât|xuat|export|chuyển|chuyen|convert)\s+(?:(?:ra|sang|thành|thanh|bản|ban|file|tệp|tep)\s+)*\.?(?:word|wold|wodr|wrod|docx?|w)\b[^\r\n]*$/i.exec(prompt);
+  if (!instruction || instruction.index < 160) return null;
+  return prompt.slice(0, instruction.index).trim();
 }
 export function localArtifactIntent(prompt: string): "resend"|"export"|null {
   const text=normalizedReference(prompt);

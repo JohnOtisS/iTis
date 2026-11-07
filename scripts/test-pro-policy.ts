@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { zipSync, strToU8 } from "fflate";
-import { needsDocumentOutput, requestedExtensions, needsComputation, isImageGeneration, fastWordMode, needsWebSearch } from "../lib/chat-task-policy";
+import { chatResponseTokenLimit, needsDocumentOutput, requestedExtensions, needsComputation, isImageGeneration, fastWordMode, needsWebSearch } from "../lib/chat-task-policy";
 import { deliverableExtensions, isRequestedDeliverable } from "../lib/document-request";
 import { selectDocuments, versionOutput, inspectDocument, spreadsheetIssues, validateOutput } from "../lib/chat-documents";
 import { relevantExcerpt } from "../lib/chat-context";
@@ -19,6 +19,10 @@ assert.equal(needsDocumentOutput("Cho tôi một file Excel mẫu."),true);
 assert.deepEqual(requestedExtensions("Xuất Word, không xuất PDF."),[".docx"]);
 assert.equal(needsComputation("Tính tổng số liệu và đối chiếu",true),true);
 assert.equal(needsComputation("Phân tích nội dung hợp đồng",true),false);
+const examHistory=[{role:"user",content:"soạn cho tôi một đề thi môn tiếng anh lớp 1 từ bài 1 dến bài 6"}];
+assert.equal(chatResponseTokenLimit(examHistory[0].content,[],"gpt-6-luna"),6000);
+assert.equal(chatResponseTokenLimit("45 phút",examHistory,"gpt-6-luna"),6000);
+assert.equal(chatResponseTokenLimit("Xin chào",[],"gpt-6-luna"),1000);
 assert.equal(isImageGeneration("Vẽ một bức tranh phong cảnh"),true);
 for(const prompt of [
   "iPhone 18 Pro Max ra chưa?",
@@ -85,7 +89,7 @@ const excerpt=relevantExcerpt("unrelated ".repeat(200)+"Important code STAR-742"
 assert.match(excerpt,/STAR-742/);
 console.log("PASS: task routing, source/output distinction, explicit versions, lineage, extraction, invalid-file rejection and relevant excerpts.");
 
-for(const prompt of ["xuất bản W","xuất wodr","chuyển Word","soạn thảo Kế hoạch chuẩn văn phòng, hoàn thiện xuất wodr"]){assert.equal(needsDocumentOutput(prompt),true,prompt);assert.deepEqual(requestedExtensions(prompt),[".docx"],prompt);}
+for(const prompt of ["xuất bản W","xuất wodr","chuyển Word","soạn thảo Kế hoạch chuẩn văn phòng, hoàn thiện xuất wodr","xuất bản doc","xuât bản doc cho tôi","xuất bản Wold cho tôi với","export .doc"]){assert.equal(needsDocumentOutput(prompt),true,prompt);assert.deepEqual(requestedExtensions(prompt),[".docx"],prompt);}
 
 assert.equal(inspectDocument(Buffer.from("\ufeffMặt hàng\tSố lượng\nAlpha\t3", "utf16le"), "excel.tsv"), "Mặt hàng\tSố lượng\nAlpha\t3");
 assert.match(inspectDocument(sharedSheet,"sales.xlsm")!, /A1: Alpha/);

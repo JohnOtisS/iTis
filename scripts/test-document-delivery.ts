@@ -105,6 +105,27 @@ async function main(){
       }
       console.log('PASS incremental answer before completion, private reasoning excluded, provider-disconnect fallback without another POST');
       console.log('PASS exact DOCX-only delivery, intermediate filtering before download, all-source coverage, one bounded repair, durable failed job, no stale answer export');
+      const recovery=randomUUID();
+      await db.insert(conversations).values({id:recovery,userId:uid,title:"Pasted exam export QA"});
+      const pasted="ĐỀ KIỂM TRA QA\nThời gian: 30 phút\n\nI. Chọn câu trả lời\n"+("Hello means Xin chào.\n".repeat(10))+"d. Two books.";
+      await db.insert(messages).values([
+        {conversationId:recovery,role:"user",content:pasted+" xuất bản Wold cho tôi với",createdAt:new Date(Date.now()-2000)},
+        {conversationId:recovery,role:"assistant",content:"Hiện tại tôi không thể đính kèm trực tiếp tệp Word trong cuộc trò chuyện này.",createdAt:new Date(Date.now()-1000)},
+      ]);
+      const pastedResult=await localArtifactAction({userId:uid,conversationId:recovery,prompt:"xuât bản doc cho tôi",locale:"vi"});
+      assert.equal(pastedResult?.attachments.length,1);
+      assert.equal(pastedResult?.usage.total_tokens,0);
+      tracked.push(...pastedResult!.attachments);
+      const recoveredBytes=await readFile(join(process.env.GENERATED_FILES_DIR!,basename(pastedResult!.attachments[0].url)));
+      const recoveredText=readEditableWord(recoveredBytes).text;
+      for(const marker of ["ĐỀ KIỂM TRA QA","30 phút","Hello","d. Two books."])assert.ok(recoveredText.includes(marker),marker);
+      assert.ok(!recoveredText.includes("không thể đính kèm"));
+      await db.insert(messages).values([
+        {conversationId:recovery,role:"user",content:"Đổi thời gian làm bài thành 45 phút.",createdAt:new Date(Date.now()+1000)},
+        {conversationId:recovery,role:"assistant",content:"Tôi không thể tạo tệp trong cuộc trò chuyện này.",createdAt:new Date(Date.now()+2000)},
+      ]);
+      assert.equal(await localArtifactAction({userId:uid,conversationId:recovery,prompt:"xuất bản doc",locale:"vi"}),null,"later edits must go through the document pipeline");
+      console.log("PASS doc/Wold recovery exports the original pasted draft without refusal text or paid calls");
     }
   }finally{
     globalThis.fetch=originalFetch;

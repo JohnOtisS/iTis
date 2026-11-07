@@ -16,6 +16,13 @@ export function needsComputation(prompt: string, hasDocuments = false) {
   return /\b(calculate|reconcile|variance|sum|formula|statistics|forecast|audit)\b|tính (?:tổng|toán|thuế|lãi)|công thức|đối chiếu|chênh lệch|thống kê|dự báo|kiểm toán/i.test(prompt)
     || (hasDocuments && /\b(vat|total|quantity|amount)\b|tổng|số lượng|thành tiền|doanh thu/i.test(prompt));
 }
+export function chatResponseTokenLimit(prompt: string, history: Array<{role:string;content:string}>, model:string) {
+  const drafting = /\b(?:soan|viet|tao|write|draft|create)\b.{0,100}\b(?:de thi|de kiem tra|bai kiem tra|giao an|bao cao|ke hoach|exam|test paper|lesson plan|report|proposal)\b/;
+  const text = documentRequestText(prompt);
+  const longDraft = drafting.test(text) || (prompt.length <= 140 &&
+    history.filter(row=>row.role==="user").slice(-8).some(row=>drafting.test(documentRequestText(row.content))));
+  return longDraft ? 6000 : model === "gpt-6.1-sol" ? 2500 : 1000;
+}
 export function needsDocumentOutput(prompt: string) {
   prompt = affirmativeDocumentRequest(prompt);
   return /\b(chuyen|convert|xuat|export|render|tao|lap|lam|sua|chinh|cap nhat|modify|edit|generate|create|make)\b.{0,70}\b(file|tep|pdf|word|docx|excel|xlsx|csv|powerpoint|pptx|bao cao|report)\b/.test(prompt)

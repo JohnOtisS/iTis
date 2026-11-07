@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {isBlockedArtifactSource,localArtifactIntent,resolveFileReference} from "../lib/artifact-policy";
+import {isBlockedArtifactSource,localArtifactIntent,pastedWordExportSource,resolveFileReference} from "../lib/artifact-policy";
 import {markdownWordDraft} from "../lib/local-artifacts";
 import {buildWord,readEditableWord} from "../lib/word-fast";
 import {estimateModelCost,taskUsage,terminalProviderUsage} from "../lib/task-usage";
@@ -34,6 +34,11 @@ for(const prompt of ["xuất bản W","xuất wodr","xuất wrod"])assert.equal(
 assert.equal(isBlockedArtifactSource("**Chưa thể xuất danh sách vào Excel**: trích đoạn PDF chưa có nhóm cần đối chiếu. Vui lòng gửi nguồn còn thiếu."),true);
 assert.equal(isBlockedArtifactSource("## Kết quả đối chiếu\nDanh sách có 5 người. Thiếu dữ liệu ở một số cột."),false);
 assert.equal(isBlockedArtifactSource("Hãy chọn nút Xuất Word tại câu trả lời cần xuất, hoặc nêu rõ tên tài liệu."),true);
+assert.equal(isBlockedArtifactSource("Hiện tại tôi không thể đính kèm trực tiếp tệp Word trong cuộc trò chuyện này."),true);
+const pasted = "ĐỀ KIỂM TRA QA\nNội dung đã chốt.\nThời gian: 30 phút\n" + "Điền từ thích hợp vào chỗ trống.\n".repeat(5);
+assert.equal(pastedWordExportSource(pasted + "d. Two books. xuất bản Wold cho tôi với"),pasted + "d. Two books.");
+assert.equal(pastedWordExportSource("Soạn một bài kiểm tra và xuất Word"),null);
+assert.equal(pastedWordExportSource(pasted + "Sửa nội dung rồi xuất Word"),null);
 assert.equal(localArtifactIntent("Chuyển file Word sang file exce;"),null);
 assert.equal(localArtifactIntent("Tra cứu giá vàng rồi xuất Word"),null);
 assert.equal(localArtifactIntent("Gửi lại file Word giá vàng hôm nay"),"resend");
