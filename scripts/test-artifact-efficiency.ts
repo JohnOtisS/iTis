@@ -35,6 +35,7 @@ assert.equal(isBlockedArtifactSource("**Chưa thể xuất danh sách vào Excel
 assert.equal(isBlockedArtifactSource("## Kết quả đối chiếu\nDanh sách có 5 người. Thiếu dữ liệu ở một số cột."),false);
 assert.equal(isBlockedArtifactSource("Hãy chọn nút Xuất Word tại câu trả lời cần xuất, hoặc nêu rõ tên tài liệu."),true);
 assert.equal(isBlockedArtifactSource("Hiện tại tôi không thể đính kèm trực tiếp tệp Word trong cuộc trò chuyện này."),true);
+assert.equal(isBlockedArtifactSource("Phần trích xuất hiện có chỉ hiển thị 43 người, chưa đủ để sắp xếp toàn bộ danh sách hoặc tạo file Excel chính xác."),true);
 const pasted = "ĐỀ KIỂM TRA QA\nNội dung đã chốt.\nThời gian: 30 phút\n" + "Điền từ thích hợp vào chỗ trống.\n".repeat(5);
 assert.equal(pastedWordExportSource(pasted + "d. Two books. xuất bản Wold cho tôi với"),pasted + "d. Two books.");
 assert.equal(pastedWordExportSource("Soạn một bài kiểm tra và xuất Word"),null);

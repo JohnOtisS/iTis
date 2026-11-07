@@ -16,6 +16,23 @@ export function needsComputation(prompt: string, hasDocuments = false) {
   return /\b(calculate|reconcile|variance|sum|formula|statistics|forecast|audit)\b|tính (?:tổng|toán|thuế|lãi)|công thức|đối chiếu|chênh lệch|thống kê|dự báo|kiểm toán/i.test(prompt)
     || (hasDocuments && /\b(vat|total|quantity|amount)\b|tổng|số lượng|thành tiền|doanh thu/i.test(prompt));
 }
+export function spreadsheetOperation(prompt: string) {
+  const text = documentRequestText(prompt);
+  if (/^\s*(?:(?:hay|vui long|please)\s+)?(?:cach|huong dan|lam sao|how (?:to|do|can)|explain how)\b/.test(text)) return null;
+  if (/\b(?:sap (?:xep|theo|thu tu)|xep (?:theo|lai|tu|danh sach|tuoi)|sort(?:ing)?|reorder|tang dan|giam dan|ascending|descending|tu (?:cao|thap) (?:xuong|len))\b/.test(text)) return "sort";
+  if (/\b(?:loc|filter(?:ing)?|khu trung|(?:bo|xoa|loai bo) (?:dong )?trung|deduplicat(?:e|ion))\b/.test(text)) return "filter";
+  if (/\b(?:phan tich|du lieu|xep hang|thong ke|nhom theo|dem|bao nhieu|top|cao tuoi nhat|tre tuoi nhat|lon nhat|nho nhat|analy[sz]\w*|data|rank\w*|count|group by|oldest|youngest|highest|lowest)\b/.test(text)) return "read";
+  return null;
+}
+
+export function isSpreadsheetRetry(prompt: string) {
+  return /^(?:(?:hay|vui long|please)\s+)?(?:lam lai|thu lai|chay lai|retry|try again|redo)(?:\s+(?:cho toi|giup toi|nhe|di|please|it))*[.!?]*$/.test(documentRequestText(prompt).trim());
+}
+
+export function wantsSpreadsheetFile(prompt: string, operation: ReturnType<typeof spreadsheetOperation>) {
+  if (operation !== "sort" && operation !== "filter") return false;
+  return !/\b(?:chi (?:can )?(?:liet ke|tra loi|hien thi)|tra loi trong chat|cho (?:toi )?biet|khong (?:can )?(?:xuat|tao) (?:them )?(?:file|tep|excel|xlsx|csv)|(?:answer|show|list) (?:only )?in chat|(?:no|without|do not create) (?:an? )?(?:file|spreadsheet))\b/.test(documentRequestText(prompt));
+}
 export function chatResponseTokenLimit(prompt: string, history: Array<{role:string;content:string}>, model:string) {
   const drafting = /\b(?:soan|viet|tao|write|draft|create)\b.{0,100}\b(?:de thi|de kiem tra|bai kiem tra|giao an|bao cao|ke hoach|exam|test paper|lesson plan|report|proposal)\b/;
   const text = documentRequestText(prompt);

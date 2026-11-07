@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { zipSync, strToU8 } from "fflate";
-import { chatResponseTokenLimit, needsDocumentOutput, requestedExtensions, needsComputation, isImageGeneration, fastWordMode, needsWebSearch } from "../lib/chat-task-policy";
+import { chatResponseTokenLimit, needsDocumentOutput, requestedExtensions, needsComputation, isImageGeneration, fastWordMode, needsWebSearch, spreadsheetOperation, wantsSpreadsheetFile, isSpreadsheetRetry } from "../lib/chat-task-policy";
 import { deliverableExtensions, isRequestedDeliverable } from "../lib/document-request";
 import { selectDocuments, versionOutput, inspectDocument, spreadsheetIssues, validateOutput } from "../lib/chat-documents";
 import { relevantExcerpt } from "../lib/chat-context";
@@ -19,6 +19,26 @@ assert.equal(needsDocumentOutput("Cho tôi một file Excel mẫu."),true);
 assert.deepEqual(requestedExtensions("Xuất Word, không xuất PDF."),[".docx"]);
 assert.equal(needsComputation("Tính tổng số liệu và đối chiếu",true),true);
 assert.equal(needsComputation("Phân tích nội dung hợp đồng",true),false);
+for(const prompt of ["xếp theo độ tuổi từ cao xuống thấp của danh sách này","sắp theo tên","sort by date descending"]){
+  assert.equal(spreadsheetOperation(prompt),"sort");
+  assert.equal(wantsSpreadsheetFile(prompt,spreadsheetOperation(prompt)),true);
+}
+for(const prompt of ["lọc 105 người cao tuổi nhất","xóa dòng trùng","filter missing records"]){
+  assert.equal(spreadsheetOperation(prompt),"filter");
+  assert.equal(wantsSpreadsheetFile(prompt,spreadsheetOperation(prompt)),true);
+}
+for(const prompt of ["Ai là 10 người cao tuổi nhất?","Đếm có bao nhiêu người","group by department"]){
+  assert.equal(spreadsheetOperation(prompt),"read");
+  assert.equal(wantsSpreadsheetFile(prompt,spreadsheetOperation(prompt)),false);
+}
+assert.equal(spreadsheetOperation("Hướng dẫn cách sắp xếp trong Excel"),null);
+assert.equal(wantsSpreadsheetFile("Xếp theo tuổi, chỉ trả lời trong chat","sort"),false);
+assert.equal(wantsSpreadsheetFile("Lọc người trên 80 tuổi, không cần xuất file","filter"),false);
+assert.equal(isSpreadsheetRetry("làm lại"),true);
+for(const prompt of ["xuất xcell","làm lại xuất phai xceell"]){
+  assert.equal(needsDocumentOutput(prompt),true,prompt);
+  assert.deepEqual(requestedExtensions(prompt),[".xlsx"]);
+}
 const examHistory=[{role:"user",content:"soạn cho tôi một đề thi môn tiếng anh lớp 1 từ bài 1 dến bài 6"}];
 assert.equal(chatResponseTokenLimit(examHistory[0].content,[],"gpt-6-luna"),6000);
 assert.equal(chatResponseTokenLimit("45 phút",examHistory,"gpt-6-luna"),6000);

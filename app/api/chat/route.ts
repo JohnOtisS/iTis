@@ -20,7 +20,7 @@ import { externalSafetyIdentifier } from "@/lib/privacy";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { buildChatContext } from "@/lib/chat-context";
 import { documentCatalog, namedDocuments, selectDocuments } from "@/lib/chat-documents";
-import { chatResponseTokenLimit, fastWordMode, isDocumentEditFollowup, isImageGeneration, needsComputation, needsDocumentOutput, needsWebSearch } from "@/lib/chat-task-policy";
+import { chatResponseTokenLimit, fastWordMode, isDocumentEditFollowup, isImageGeneration, isSpreadsheetRetry, needsComputation, needsDocumentOutput, needsWebSearch, spreadsheetOperation, wantsSpreadsheetFile } from "@/lib/chat-task-policy";
 import { startChatJob } from "@/lib/chat-jobs";
 import { assertContinuationBudget } from "@/lib/token-budget";
 
@@ -322,11 +322,18 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   const rememberedContext=user.memoryEnabled?await retrieveDocumentMemory(user.id,prompt):{context:"",files:[] as ChatAttachment[]};
   const rememberedFileTask=needsDocumentOutput(prompt)||isDocumentEditFollowup(prompt,true)||needsComputation(prompt,true);
   const catalog = [...await documentCatalog(conversation.id),...(rememberedFileTask?rememberedContext.files:[])];
-  const referencesFiles = needsDocumentOutput(prompt) || needsFullDocumentReview(prompt,catalog.length) || /file|tệp|tài liệu|dữ liệu|bảng|sheet|slide|cột|dòng|đối chiếu|so sánh|tổng|số liệu|excel|pdf|docx|pptx|potx|powerpoint|csv|xlsx|word|document|data|table|row|column|compare|total|continue|tiếp tục|làm tiếp|sửa|chỉnh|đổi|thay/i.test(prompt) || namedDocuments(catalog,prompt).length>0;
+  const spreadsheetRetry = isSpreadsheetRetry(prompt);
+  const priorSpreadsheetPrompt = spreadsheetRetry
+    ? history.filter(message=>message.role==="user").slice(0,-1).findLast(message=>spreadsheetOperation(message.content) || outputExtensions(message.content).some(extension=>extension===".xlsx" || extension===".csv"))?.content
+    : undefined;
+  const spreadsheetRequest = spreadsheetOperation(priorSpreadsheetPrompt ?? prompt) ?? (spreadsheetRetry ? "read" : null);
+  const referencesFiles = spreadsheetRequest || needsDocumentOutput(prompt) || needsFullDocumentReview(prompt,catalog.length) || /file|tệp|tài liệu|dữ liệu|bảng|sheet|slide|cột|dòng|đối chiếu|so sánh|tổng|số liệu|excel|pdf|docx|pptx|potx|powerpoint|csv|xlsx|word|document|data|table|row|column|compare|total|continue|tiếp tục|làm tiếp|sửa|chỉnh|đổi|thay/i.test(prompt) || namedDocuments(catalog,prompt).length>0;
   const latestUpload = history.findLast(message=>message.role==="user"&&message.attachments.length>0)?.attachments;
+  const selectionPrompt = priorSpreadsheetPrompt ?? prompt;
+  const selectionCatalog = spreadsheetRetry && latestUpload?.length && !namedDocuments(catalog,selectionPrompt).length ? latestUpload : catalog;
   const selectedFiles = attachmentData.length
     ? [...inputAttachments,...selectDocuments(namedDocuments(catalog.filter(file=>!inputAttachments.some(input=>input.url===file.url)),prompt),prompt)]
-    : referencesFiles ? selectDocuments(catalog,prompt,latestUpload) : [];
+    : referencesFiles ? selectDocuments(selectionCatalog,selectionPrompt,latestUpload) : [];
   const shouldReuseFiles = attachmentData.length === 0 && selectedFiles.length > 0;
   const restoredAttachmentData = shouldReuseFiles
     ? (await Promise.all(selectedFiles.slice(0, 10).map(loadStoredAttachment))).filter((item): item is NonNullable<typeof item> => Boolean(item))
@@ -363,11 +370,14 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
 - Maintain continuity in the current conversation without repeating all previous content.
 - Keep Markdown compact; use lists and tables only when they improve readability.`) + (memoryContext ? `\n\n${memoryContext}\n- Never reveal that another user has memories. Treat these memories as belonging only to the signed-in user.` : "");
 
-  const artifactTask = needsDocumentOutput(prompt) || isDocumentEditFollowup(prompt,selectedFiles.length>0);
-  const computationTask = needsFullDocumentReview(prompt,selectedFiles.length) || needsComputation(prompt, selectedFiles.length>0) || (selectedFiles.some(file=>/\.(csv|tsv|xlsx|xlsm|xls)$/i.test(file.name)) && /phân tích|analy|dữ liệu|data/i.test(prompt));
+  const spreadsheetTask = selectedFiles.some(file=>/\.(csv|tsv|xlsx|xlsm|xls)$/i.test(file.name)) ? spreadsheetRequest ?? "read" : null;
+  const artifactTask = needsDocumentOutput(prompt) || isDocumentEditFollowup(prompt,selectedFiles.length>0) || wantsSpreadsheetFile(priorSpreadsheetPrompt ?? prompt,spreadsheetTask)
+    || Boolean(spreadsheetTask && priorSpreadsheetPrompt && needsDocumentOutput(priorSpreadsheetPrompt));
+  const computationTask = Boolean(spreadsheetTask) || needsFullDocumentReview(prompt,selectedFiles.length) || needsComputation(prompt, selectedFiles.length>0);
   const simpleWord=fastWordMode(prompt,selectedFiles,computationTask,webSearchTask);
   if (systemProvider === "openai" && (artifactTask || computationTask || selectedFiles.length>0 || webSearchTask)) {
-    return startChatJob({userId:user.id,conversationId:conversation.id,sourceMessageId,prompt,systemPrompt:`${systemPrompt}\n\n${context.contextNote}`,history:history.map(({role,content})=>({role,content})),documents:selectedFiles,catalog,artifact:artifactTask,compute:computationTask,webSearch:webSearchTask,model:(!routerEnabled||(!simpleWord&&(artifactTask||computationTask||isComplexTask(prompt))))?"gpt-6.1-sol":"gpt-6-luna",locale:user.locale},Boolean(request.headers.get("accept")?.includes("application/x-ndjson")),request.signal);
+    const jobPrompt = spreadsheetTask && priorSpreadsheetPrompt ? `${priorSpreadsheetPrompt}\n${prompt}` : prompt;
+    return startChatJob({userId:user.id,conversationId:conversation.id,sourceMessageId,prompt:jobPrompt,systemPrompt:`${systemPrompt}\n\n${context.contextNote}`,history:history.map(({role,content})=>({role,content})),documents:selectedFiles,catalog,artifact:artifactTask,compute:computationTask,spreadsheetTask,webSearch:webSearchTask,model:(!routerEnabled||(!simpleWord&&(artifactTask||computationTask||isComplexTask(prompt))))?"gpt-6.1-sol":"gpt-6-luna",locale:user.locale},Boolean(request.headers.get("accept")?.includes("application/x-ndjson")),request.signal);
   }
   const wantsStream = request.headers.get("accept")?.includes("application/x-ndjson") && !artifactTask && openAiAttachmentData.length === 0;
   if (wantsStream) {

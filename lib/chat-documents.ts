@@ -125,7 +125,7 @@ export function selectDocuments(catalog: ChatAttachment[], prompt: string, lates
   const named = namedDocuments(catalog, prompt);
   const original = /\b(?:original|file goc|tep goc|ban goc)\b/.test(text);
   const requestedVersions = [...text.matchAll(/\b(?:v(?:ersion)?\s*|ban\s+)(\d+)\b/g)].map(match=>Number(match[1]));
-  const recent = !requestedVersions.length && /\b(?:vua gui|vua tai len|just (?:sent|uploaded)|most recent upload)\b/.test(text)
+  const recent = !requestedVersions.length && /\b(?:vua gui|vua tai len|(?:danh sach|bang|file|tep) nay|just (?:sent|uploaded)|most recent upload|this (?:list|spreadsheet|workbook))\b/.test(text)
     ? catalog.filter(file=>latestUpload.some(upload=>upload.url===file.url)) : [];
   const wholeBatch = recent.length > 0 && /\b(?:(?:ca|tat ca)\s+(?:(?:\d+|hai|ba|bon|nam|sau|bay|tam|chin|muoi|cac)\s+)?(?:file|tep|tai lieu)\s+vua|all (?:the )?files (?:i )?just (?:sent|uploaded))\b/.test(text);
   let candidates = recent.length ? recent : catalog;

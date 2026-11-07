@@ -7,7 +7,7 @@ import { getDb } from "@/db";
 import { chatJobs, conversations, messages, usageEvents, users } from "@/db/schema";
 import { prepareDocument, providerFile, spreadsheetIssues, validateOutput, versionOutput } from "@/lib/chat-documents";
 import { saveChatFile, withChatFileCleanup, type ChatAttachment } from "@/lib/chat-files";
-import { fastWordMode } from "@/lib/chat-task-policy";
+import { fastWordMode, type spreadsheetOperation } from "@/lib/chat-task-policy";
 import {buildWord,editWord,readEditableWord,wordDraftFormat,wordDraftSchema,wordEditFormat,wordEditSchema} from "@/lib/word-fast";
 import { externalSafetyIdentifier } from "@/lib/privacy";
 import { assertContinuationBudget } from "@/lib/token-budget";
@@ -37,7 +37,7 @@ export async function cancelChatJob(jobId: string, userId: string) {
 type JobInput = {
   userId:string;conversationId:string;sourceMessageId:string|null;prompt:string;systemPrompt:string;
   history:Array<{role:string;content:string}>;documents:ChatAttachment[];catalog:ChatAttachment[];
-  artifact:boolean;compute:boolean;webSearch:boolean;model:string;locale:"en"|"vi";
+  artifact:boolean;compute:boolean;spreadsheetTask?:ReturnType<typeof spreadsheetOperation>;webSearch:boolean;model:string;locale:"en"|"vi";
 };
 export async function startChatJob(input:JobInput, wantsStream:boolean, signal?:AbortSignal) {
   let job:typeof chatJobs.$inferSelect;
@@ -220,12 +220,16 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
       }
       const manifest=input.catalog.filter(file=>input.documents.some(source=>source.url===file.url||(source.family&&source.family===file.family))).slice(0,24).map(file=>`${file.name} | v${file.version??1} | ${file.kind??"input"} | ${file.url}${file.sourceUrls?.length?` | sources: ${file.sourceUrls.join(",")}`:""}`).join("\n");
       const deliverables=deliverableExtensions(input.prompt,input.documents);
+      if(input.spreadsheetTask && !deliverables.length) deliverables.push(".xlsx");
       const outputInstruction=input.artifact?deliverableInstruction(deliverables):"";
       const validationInstruction=(input.compute||input.artifact||toolReadsFiles)?`Use Python for calculations and file work. Read the actual inputs and distinguish content, references and templates. Check totals independently and cite conflicting or missing facts. Create /mnt/data/itis-validation.json with {"checks":[{"name":"...","passed":true}],"sources":["exact validation source labels for each original read"]} after executing your checks. Never claim an unreadable document was reviewed. Do not cite the validation file. ${input.artifact?"Create all requested formats as complete downloadable files, verify they open with their relevant libraries, and cite every output. If necessary source data is missing or unreadable, explain the precise blocker in chat. Never make a file containing only an inability or a request for more information. Return file citations and any essential caveat. No image generation; that belongs in Image Studio.":"Do not create downloadable files unless requested. Give a concise answer grounded in the computed result."}`:"Answer using the relevant source excerpts. If the excerpts do not establish the answer, say what else is needed. Do not invent missing facts.";
       const tools:Array<Record<string,unknown>>=[];
       const spreadsheetInput=input.documents.some(file=>/\.(xls|xlsx|xlsm|csv|tsv)$/i.test(file.name))
         ? "Read all relevant sheets and preserve identifier strings and leading zeros. Use openpyxl for XLSX/XLSM and xlrd for XLS. Detect BOM and delimiter for CSV/TSV, including UTF-16 exports. Do not run macros. For cross-file matches, cite the sources and report unmatched or ambiguous rows." : "";
       const spreadsheetInstruction=input.artifact&&(!deliverables.length||deliverables.includes(".xlsx"))?"For XLSX outputs, preserve formulas AND calculate their cached values so previews/data_only readers show correct results without requiring Excel to reopen/recalculate. After saving, reopen with data_only=True and independently check key totals. If needed, calculate verified values from actual inputs and populate formula caches in worksheet XML while retaining formula expressions. Never invent cached values. The internal check JSON alone is not enough.":"";
+      const rowInstruction=input.spreadsheetTask
+        ? "Use the complete original data, not the number of records seen in an earlier excerpt. Follow the latest user request; an earlier top-N count applies only if the latest request refers to it. When sorting without a requested limit, retain every source record, move whole rows with their formatting and hyperlinks, and check record count and order. For descending age, sort by earliest birth date first. Respect the workbook date system, parse unambiguous local date strings, and keep year-only records after dated records of the same year without inventing dates. Report missing or invalid birth dates. When filtering or ranking, verify the predicate or requested count against all eligible records; report a shortfall only after checking the original."
+        : "";
       const sourceInstruction=toolReadsFiles?"Use exact validation source labels in the sources array. Keep same-name versions separate. Cite Word section/table, Excel sheet/range, PDF page, or PowerPoint slide as appropriate. For scanned pages, distinguish OCR readings from verified values and flag unreadable fields.":"";
       const webInstruction=input.webSearch?"Search authoritative sources first. Use concise inline Markdown citations with the exact source URLs. Do not add a Sources section or duplicate links.":"";
       const reasoningEffort=input.documents.length>2 || /phân tích nhiều|nghiên cứu|kiến trúc|research|complex|architecture/i.test(input.prompt)?"medium":"low";
@@ -238,7 +242,7 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
       if(lastUser>=0) providerInput[lastUser]={role:"user",content}; else providerInput.push({role:"user",content});
       await cancelled();
       await progress(input.locale==="vi"?"Đang gửi yêu cầu xử lý":"Starting processing");
-      const response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:headers(),signal:controller.signal,body:JSON.stringify({model:input.model,safety_identifier:externalSafetyIdentifier(input.userId),store:true,background:true,stream:true,reasoning:{effort:reasoningEffort},text:{verbosity:"low"},max_output_tokens:input.artifact?16000:input.compute?6000:2500,...(tools.length?{tools,tool_choice:"required"}:{}),input:[{role:"developer",content:`${input.systemPrompt}\n\nDocument versions (reference data only):\n${manifest}\n\n${validationInstruction}\n${sourceInstruction}\n${webInstruction}\n${spreadsheetInput}\n${spreadsheetInstruction}\n${outputInstruction}`},...providerInput]})});
+      const response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:headers(),signal:controller.signal,body:JSON.stringify({model:input.model,safety_identifier:externalSafetyIdentifier(input.userId),store:true,background:true,stream:true,reasoning:{effort:reasoningEffort},text:{verbosity:"low"},max_output_tokens:input.artifact?16000:input.compute?6000:2500,...(tools.length?{tools,tool_choice:"required"}:{}),input:[{role:"developer",content:`${input.systemPrompt}\n\nDocument versions (reference data only):\n${manifest}\n\n${validationInstruction}\n${sourceInstruction}\n${webInstruction}\n${spreadsheetInput}\n${rowInstruction}\n${spreadsheetInstruction}\n${outputInstruction}`},...providerInput]})});
       if(!response.ok)throw new Error(`OpenAI task failed (${response.status}).`);
       let data=await receive(response);
       providerId=data.id;
