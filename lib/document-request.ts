@@ -1,5 +1,5 @@
 // Interpret output requirements separately from input filenames and intermediate files.
-const sourceClause = /\b(?:tu (?=file\b|tep\b|tai lieu\b|word\b|docx\b|excel\b|xlsx\b|pdf\b|pptx\b|powerpoint\b|csv\b)|dua tren\b|theo mau\b|based on\b|from (?=(?:the )?(?:file|document|word|docx|excel|xlsx|pdf|pptx|powerpoint|csv)\b))/;
+const sourceClause = /\b(?:(?:tu|(?:su )?dung|dua vao|can cu vao) (?=file\b|tep\b|tai lieu\b|word\b|docx\b|excel\b|xlsx\b|pdf\b|pptx\b|powerpoint\b|csv\b)|dua tren\b|theo mau\b|based on\b|from (?=(?:the )?(?:file|document|word|docx|excel|xlsx|pdf|pptx|powerpoint|csv)\b))/;
 const conversionTarget = /\b(?:sang|thanh|to|into)\s+(?:(?:file|tep|ban|mot|a|an|the)\s+)*(?=pdf\b|word\b|docx\b|excel\b|xlsx\b|csv\b|powerpoint\b|pptx\b|txt\b|markdown\b)/;
 export const deliveryTarget = /\b(?:ban hanh(?:\s+(?:cho (?:toi|minh|em|anh)))?|ra|gui(?: (?:cho )?(?:toi|minh|em|anh))?|cho (?:toi|minh|em|anh)|send me|give me)\s+(?:(?:ra|sang|thanh|mot|a|an|ban|file|tep|version)\s+)*\.?(?:word|docx|pdf|excel|xlsx|csv|powerpoint|pptx)\b/;
 export function documentRequestText(value:string){

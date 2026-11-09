@@ -52,6 +52,7 @@ async function main(){
     {prompt:"Xuất Word theo mẫu PDF.",sources:[pdf],outputs:[".docx"]},
     {prompt:"Ban hành ra bản Word từ file PDF.",sources:[pdf],outputs:[".docx"]},
     {prompt:"Dựa trên PDF, ban hành ra bản Word.",sources:[pdf],outputs:[".docx"]},
+    {prompt:"Ban hành ra bản Word, dùng PDF đính kèm làm căn cứ.",sources:[pdf],outputs:[".docx"]},
     {prompt:"Từ file PowerPoint, xuất PDF.",sources:[slides],outputs:[".pdf"]},
     {prompt:"Dựa trên Quarterly.xlsx và Rules.pdf, xuất Word và PowerPoint.",sources:[revised,pdf],outputs:[".docx",".pptx"]},
   ]){
