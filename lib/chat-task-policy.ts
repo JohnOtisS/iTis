@@ -1,4 +1,4 @@
-import {affirmativeDocumentRequest,documentRequestText,outputExtensions} from "@/lib/document-request";
+import {affirmativeDocumentRequest,deliveryTarget,documentRequestText,outputExtensions} from "@/lib/document-request";
 
 export function needsWebSearch(prompt: string) {
   const text = documentRequestText(prompt).replace(/`[^`]*`|"[^"]*"|“[^”]*”/g, " ");
@@ -42,8 +42,23 @@ export function chatResponseTokenLimit(prompt: string, history: Array<{role:stri
 }
 export function needsDocumentOutput(prompt: string) {
   prompt = affirmativeDocumentRequest(prompt);
+  if (deliveryPhrase(prompt)) return true;
   return /\b(chuyen|convert|xuat|export|render|tao|lap|lam|sua|chinh|cap nhat|modify|edit|generate|create|make)\b.{0,70}\b(file|tep|pdf|word|docx|excel|xlsx|csv|powerpoint|pptx|bao cao|report)\b/.test(prompt)
     || /\b(?:cho (?:toi|minh|em|anh)|send me|give me)\s+(?:mot\s+|an?\s+|the\s+)?(?:file|tep)\s+(?:pdf|word|docx|excel|xlsx|csv|powerpoint|pptx)\b/.test(prompt);
+}
+function deliveryPhrase(text: string) {
+  if (/^\s*(?:(?:hay|ban|please)\s+)*(?:cach|huong dan|lam sao|how (?:to|do|can))\b/.test(text)) return false;
+  if (/\b(?:khong (?:can|muon)|dung|do not|don't)\s+(?:ban hanh|gui|in)\b/.test(text)) return false;
+  return deliveryTarget.test(text);
+}
+export function isDocumentDeliveryFollowup(prompt: string) {
+  const text=documentRequestText(prompt).trim();
+  return /^(?:(?:ban|hay|vui long|please)\s+)*(?:ban hanh|(?:gui|cho) (?:lai )?(?:cho )?(?:toi|minh|anh|em) tai(?: xuong| ve)|tai xuong|download)\b(?:\s+(?:ra|cho|toi|minh|em|anh|giup|de|tai|xuong|ve|nhe|di|voi|it|please))*[.!?]*$/.test(text);
+}
+export function downloadFormatFromContext(prompt: string, previousUserRequests: string[]) {
+  if (!isDocumentDeliveryFollowup(prompt)) return [];
+  const previous=previousUserRequests.findLast(value=>!/^(?:ok(?:ay)?|duoc|dong y|vang|yes|uh|u)[.!?]*$/.test(documentRequestText(value).trim()));
+  return previous && needsDocumentOutput(previous) ? outputExtensions(previous) : [];
 }
 export const requestedExtensions=outputExtensions;
 export function isWordFieldEdit(prompt: string) {

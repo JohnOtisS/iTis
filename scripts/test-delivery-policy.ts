@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {deliverableExtensions,documentSourceLabels,isRequestedDeliverable,outputExtensions,needsFullDocumentReview,sourceCoverageIssues} from "../lib/document-request";
 import {selectDocuments,namedDocuments} from "../lib/chat-documents";
-import {needsDocumentOutput} from "../lib/chat-task-policy";
+import {downloadFormatFromContext,needsDocumentOutput} from "../lib/chat-task-policy";
 import {readChatEvents} from "../lib/chat-stream";
 import {taskFailureText} from "../lib/task-failure";
 async function main(){
@@ -13,6 +13,19 @@ async function main(){
   assert.deepEqual(outputExtensions("Không PDF, xuất Word"),[".docx"]);
   assert.deepEqual(outputExtensions("Xuất Word, không PDF hay text phụ"),[".docx"]);
   assert.deepEqual(outputExtensions("Chuyển Word sang PDF"),[".pdf"]);
+  const issueWord="ban hành ra bản Word cho tôi ban hành nhé";
+  for(const prompt of [issueWord,"bạn không ban hành ra bản Word cho ttoii theo nghị định 30 được à","Cho tôi bản Word"]){
+    assert.equal(needsDocumentOutput(prompt),true,prompt);
+    assert.deepEqual(outputExtensions(prompt),[".docx"],prompt);
+  }
+  assert.equal(needsDocumentOutput("Không cần ban hành ra bản Word."),false);
+  assert.equal(needsDocumentOutput("Hướng dẫn cách ban hành ra bản Word."),false);
+  assert.deepEqual(downloadFormatFromContext("bạn ban hành cho tôi tải xuống",[issueWord,"ok"]),[".docx"]);
+  assert.deepEqual(downloadFormatFromContext("Cho tôi tải xuống",[issueWord,"Xuất bản PDF nhé"]),[".pdf"]);
+  assert.deepEqual(downloadFormatFromContext("Cho tôi tải xuống",[issueWord,"Giá vàng hôm nay bao nhiêu?"]),[]);
+  assert.deepEqual(downloadFormatFromContext("Cho tôi tải xuống",[]),[]);
+  assert.deepEqual(downloadFormatFromContext("Không cần tải xuống",[issueWord]),[]);
+  assert.deepEqual(downloadFormatFromContext("Khi nào văn bản được ban hành?",[issueWord]),[]);
   assert.deepEqual(outputExtensions("Xuất Word và PDF"),[".docx",".pdf"]);
   assert.deepEqual(deliverableExtensions("Sửa tên trong file",[{name:"draft.docx"}]),[".docx"]);
   assert.equal(isRequestedDeliverable("ocr.txt",[".txt"]),true);
@@ -37,6 +50,8 @@ async function main(){
     {prompt:"Dựa trên Word và PDF, xuất file exce;",sources:[word,pdf],outputs:[".xlsx"]},
     {prompt:"Sửa Excel dựa trên PDF rồi xuất Word.",sources:[revised,pdf],outputs:[".docx"]},
     {prompt:"Xuất Word theo mẫu PDF.",sources:[pdf],outputs:[".docx"]},
+    {prompt:"Ban hành ra bản Word từ file PDF.",sources:[pdf],outputs:[".docx"]},
+    {prompt:"Dựa trên PDF, ban hành ra bản Word.",sources:[pdf],outputs:[".docx"]},
     {prompt:"Từ file PowerPoint, xuất PDF.",sources:[slides],outputs:[".pdf"]},
     {prompt:"Dựa trên Quarterly.xlsx và Rules.pdf, xuất Word và PowerPoint.",sources:[revised,pdf],outputs:[".docx",".pptx"]},
   ]){

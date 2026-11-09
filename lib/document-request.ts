@@ -1,6 +1,7 @@
 // Interpret output requirements separately from input filenames and intermediate files.
 const sourceClause = /\b(?:tu (?=file\b|tep\b|tai lieu\b|word\b|docx\b|excel\b|xlsx\b|pdf\b|pptx\b|powerpoint\b|csv\b)|dua tren\b|theo mau\b|based on\b|from (?=(?:the )?(?:file|document|word|docx|excel|xlsx|pdf|pptx|powerpoint|csv)\b))/;
 const conversionTarget = /\b(?:sang|thanh|to|into)\s+(?:(?:file|tep|ban|mot|a|an|the)\s+)*(?=pdf\b|word\b|docx\b|excel\b|xlsx\b|csv\b|powerpoint\b|pptx\b|txt\b|markdown\b)/;
+export const deliveryTarget = /\b(?:ban hanh(?:\s+(?:cho (?:toi|minh|em|anh)))?|ra|gui(?: (?:cho )?(?:toi|minh|em|anh))?|cho (?:toi|minh|em|anh)|send me|give me)\s+(?:(?:ra|sang|thanh|mot|a|an|ban|file|tep|version)\s+)*\.?(?:word|docx|pdf|excel|xlsx|csv|powerpoint|pptx)\b/;
 export function documentRequestText(value:string){
   return value.normalize("NFD").replace(/\p{M}/gu,"").replace(/[đĐ]/g,"d").toLowerCase()
     .replace(/\b(?:wold|wodr|wrod|wor[dđ])\b/g,"word")
@@ -12,9 +13,9 @@ export function outputExtensions(prompt:string){
   let text=affirmativeDocumentRequest(prompt);
   // A final export after an edit identifies the deliverable, even if the edit
   // mentions a different source format.
-  const exportStep=text.search(/(?:\b(?:roi|sau do|then)\b|[,;.!?\n])\s*(?:hay\s+)?(?:xuat|export)\b/);
-  if(exportStep>=0&&!/\b(?:xuat|export)\b/.test(text.slice(0,exportStep)))text=text.slice(exportStep);
-  const action=text.search(/\b(?:tao|create|generate|xuat|export|chuyen|convert|sua|edit)\b/);
+  const exportStep=text.search(/(?:\b(?:roi|sau do|then)\b|[,;.!?\n])\s*(?:hay\s+)?(?:xuat|export|ban hanh)\b/);
+  if(exportStep>=0&&!/\b(?:xuat|export|ban hanh)\b/.test(text.slice(0,exportStep)))text=text.slice(exportStep);
+  const action=text.search(/\b(?:tao|create|generate|xuat|export|ban hanh|chuyen|convert|sua|edit)\b/);
   if(action>=0)text=text.slice(action);
   text=text.split(sourceClause)[0];
   const conversion=text.search(conversionTarget);
@@ -46,9 +47,9 @@ export function sourceFormatText(prompt:string){
   const from=sourceClause.exec(text);
   // An edit can name one source before the reference clause and another after.
   // Only skip the earlier text when it states an output before its sources.
-  const outputBeforeSource=from&&/\b(?:xuat|export|tao|create|generate)\b/.test(text.slice(0,from.index));
+  const outputBeforeSource=from&&(/\b(?:xuat|export|tao|create|generate)\b/.test(text.slice(0,from.index)) || deliveryTarget.test(text.slice(0,from.index)));
   const source=from&&outputBeforeSource?text.slice(from.index+from[0].length):text;
-  const beforeExport=source.split(/\b(?:xuat|export)\b/)[0];
+  const beforeExport=source.split(/\b(?:xuat|export)\b/)[0].split(deliveryTarget)[0];
   const beforeCreation=from?beforeExport.split(/\b(?:chuyen|convert|tao|create)\b/)[0]:beforeExport;
   return beforeCreation.split(conversionTarget)[0];
 }

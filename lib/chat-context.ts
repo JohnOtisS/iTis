@@ -15,10 +15,10 @@ export function relevantExcerpt(content: string, query: string, budget = 1800) {
   return ranked.map(c => `[excerpt ${c.index + 1}] ${c.text}`).join("\n").slice(0, budget);
 }
 
-export async function buildChatContext(conversationId: string, query: string, maxTokens: number, options:{compact?:boolean}={}) {
+export async function buildChatContext(conversationId: string, query: string, maxTokens: number, options:{compact?:boolean;documentFollowup?:boolean}={}) {
   const db = getDb();
   const recentDesc = await db.select().from(messages).where(eq(messages.conversationId, conversationId))
-    .orderBy(desc(messages.createdAt), desc(messages.id)).limit(options.compact?8:16);
+    .orderBy(desc(messages.createdAt), desc(messages.id)).limit(options.compact&&!options.documentFollowup?8:16);
   const recent = recentDesc.reverse();
   const oldest = recent[0];
   let summary = "";
