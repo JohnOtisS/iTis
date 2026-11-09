@@ -14,6 +14,7 @@ export function isBlockedArtifactSource(content: string) {
   const opening = normalizedReference(content.slice(0, 500)).replace(/^[#>*_\s]+/, "").replace(/^(?:hien tai|currently)[, ]+/, "");
   return /^(?:(?:toi|minh|i|we) )?(?:chua the|khong the|cannot|can't|could not|couldn't|(?:am|are) unable to|unable to) (?:xuat|tao|lap|loc|doi chieu|hoan tat|hoan thanh|dinh kem|export|create|generate|complete|produce|finish|attach)\b/.test(opening)
     || /^(?:chua du|thieu) (?:du lieu|thong tin|tai lieu)\b/.test(opening)
+    || /^(?:chua xac dinh duoc|cannot identify)\b.{0,80}\b(?:tinh|nguon|ke hoach|van ban|province|source|plan|directive)\b/.test(opening)
     || /^(?:(?:phan|cac) )?(?:trich xuat|trich doan)\b.{0,260}\b(?:chua du|khong du|thieu nhieu dong)\b/.test(opening)
     || /^(?:hay chon nut xuat word|co nhieu ban nhap phu hop|select the answer to export|several drafts match)\b/.test(opening);
 }

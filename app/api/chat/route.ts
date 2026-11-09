@@ -20,7 +20,7 @@ import { externalSafetyIdentifier } from "@/lib/privacy";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { buildChatContext } from "@/lib/chat-context";
 import { documentCatalog, namedDocuments, selectDocuments } from "@/lib/chat-documents";
-import { chatResponseTokenLimit, fastWordMode, isDocumentEditFollowup, isImageGeneration, isSpreadsheetRetry, needsComputation, needsDocumentOutput, needsWebSearch, spreadsheetOperation, wantsSpreadsheetFile } from "@/lib/chat-task-policy";
+import { chatResponseTokenLimit, fastWordMode, isDocumentEditFollowup, isImageGeneration, isSpreadsheetRetry, isWordFieldEdit, needsComputation, needsDocumentOutput, needsWebSearch, spreadsheetOperation, wantsSpreadsheetFile } from "@/lib/chat-task-policy";
 import { startChatJob } from "@/lib/chat-jobs";
 import { assertContinuationBudget } from "@/lib/token-budget";
 
@@ -331,9 +331,12 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   const latestUpload = history.findLast(message=>message.role==="user"&&message.attachments.length>0)?.attachments;
   const selectionPrompt = priorSpreadsheetPrompt ?? prompt;
   const selectionCatalog = spreadsheetRetry && latestUpload?.length && !namedDocuments(catalog,selectionPrompt).length ? latestUpload : catalog;
+  const wordFieldEdit = isWordFieldEdit(prompt);
+  const latestWordOutputs = history.findLast(message=>message.role==="assistant")?.attachments.filter(file=>file.kind==="output" && /\.docx$/i.test(file.name)) ?? [];
+  const wordEditSource = wordFieldEdit && !namedDocuments(catalog,prompt).length && latestWordOutputs.length===1 ? latestWordOutputs[0] : undefined;
   const selectedFiles = attachmentData.length
     ? [...inputAttachments,...selectDocuments(namedDocuments(catalog.filter(file=>!inputAttachments.some(input=>input.url===file.url)),prompt),prompt)]
-    : referencesFiles ? selectDocuments(selectionCatalog,selectionPrompt,latestUpload) : [];
+    : wordEditSource ? [wordEditSource] : referencesFiles ? selectDocuments(selectionCatalog,selectionPrompt,latestUpload) : [];
   const shouldReuseFiles = attachmentData.length === 0 && selectedFiles.length > 0;
   const restoredAttachmentData = shouldReuseFiles
     ? (await Promise.all(selectedFiles.slice(0, 10).map(loadStoredAttachment))).filter((item): item is NonNullable<typeof item> => Boolean(item))
@@ -371,7 +374,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
 - Keep Markdown compact; use lists and tables only when they improve readability.`) + (memoryContext ? `\n\n${memoryContext}\n- Never reveal that another user has memories. Treat these memories as belonging only to the signed-in user.` : "");
 
   const spreadsheetTask = selectedFiles.some(file=>/\.(csv|tsv|xlsx|xlsm|xls)$/i.test(file.name)) ? spreadsheetRequest ?? "read" : null;
-  const artifactTask = needsDocumentOutput(prompt) || isDocumentEditFollowup(prompt,selectedFiles.length>0) || wantsSpreadsheetFile(priorSpreadsheetPrompt ?? prompt,spreadsheetTask)
+  const artifactTask = needsDocumentOutput(prompt) || isDocumentEditFollowup(prompt,selectedFiles.length>0) || (wordFieldEdit && selectedFiles.some(file=>/\.docx$/i.test(file.name))) || wantsSpreadsheetFile(priorSpreadsheetPrompt ?? prompt,spreadsheetTask)
     || Boolean(spreadsheetTask && priorSpreadsheetPrompt && needsDocumentOutput(priorSpreadsheetPrompt));
   const computationTask = Boolean(spreadsheetTask) || needsFullDocumentReview(prompt,selectedFiles.length) || needsComputation(prompt, selectedFiles.length>0);
   const simpleWord=fastWordMode(prompt,selectedFiles,computationTask,webSearchTask);

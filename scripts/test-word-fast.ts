@@ -21,4 +21,14 @@ assert.equal(fastWordMode("Đổi Backend thành Frontend trong file Word",[{nam
 assert.equal(fastWordMode("Đổi Backend thành Frontend trong file này",[{name:"source.docx"}],false,false),"edit");
 assert.equal(fastWordMode("Chuyển PDF sang Word",[{name:"source.pdf"}],false,false),null);
 assert.equal(fastWordMode("Tạo Word và PowerPoint",[],false,false),null);
+assert.equal(fastWordMode("Dựa vào kế hoạch của tỉnh, xuất Word",[],false,false),null);
+assert.equal(fastWordMode("Điền số văn bản 12/KH-UBND",[{name:"ke-hoach.docx"}],false,false),"edit");
+const blankForm=buildWord({filename:"blank.docx",title:"Kế hoạch",summary:"",blocks:[
+  {type:"paragraph",text:"Số văn bản: …/KH-UBND",rows:[]},
+  {type:"paragraph",text:"Ngày ký: …",rows:[]},
+  {type:"paragraph",text:"Người ký: …",rows:[]},
+]});
+const filledForm=readEditableWord(editWord(readEditableWord(blankForm),{summary:"",replacements:[{from:"Số văn bản: …/KH-UBND",to:"Số văn bản: 12/KH-UBND",occurrences:1}]}));
+assert.match(filledForm.text,/Số văn bản: 12\/KH-UBND/);
+assert.match(filledForm.text,/Ngày ký: …\nNgười ký: …/);
 console.log("PASS: valid Word generation, split-run exact replacements, unchanged styles/footer/relationships, occurrence checks and routing.");
