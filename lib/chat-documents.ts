@@ -177,6 +177,18 @@ export async function prepareDocument(file: ChatAttachment, userId: string, quer
   }
   return { file, bytes: new Uint8Array(bytes), excerpt: extracted ? relevantExcerpt(extracted,query,5000) : null, cached: record.extractedText !== null, providerFileId: record.providerFileId, providerExpiresAt: record.providerExpiresAt };
 }
+export async function readablePdfPages(bytes: Uint8Array) {
+  const pdf = await getDocumentProxy(new Uint8Array(bytes), {useSystemFonts:false,useWorkerFetch:false});
+  try {
+    if (pdf.numPages > 20) return null;
+    const {text} = await extractText(pdf, {mergePages:false});
+    return text.length === pdf.numPages && text.every(page => (page.match(/[\p{L}\p{N}]/gu)?.length ?? 0) >= 40)
+      ? pdf.numPages : null;
+  } finally {
+    await pdf.loadingTask.destroy();
+  }
+}
+
 export async function providerFile(document: Awaited<ReturnType<typeof prepareDocument>>, signal: AbortSignal) {
   if (document.providerFileId && document.providerExpiresAt && document.providerExpiresAt.getTime() > Date.now()+60000) return document.providerFileId;
   const form = new FormData();

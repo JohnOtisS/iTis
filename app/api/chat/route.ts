@@ -20,7 +20,7 @@ import { externalSafetyIdentifier } from "@/lib/privacy";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { buildChatContext } from "@/lib/chat-context";
 import { documentCatalog, namedDocuments, selectDocuments } from "@/lib/chat-documents";
-import { chatResponseTokenLimit, downloadFormatFromContext, fastWordMode, isDocumentDeliveryFollowup, isDocumentEditFollowup, isImageGeneration, isSpreadsheetRetry, isWordFieldEdit, needsComputation, needsDocumentOutput, needsWebSearch, spreadsheetOperation, wantsSpreadsheetFile } from "@/lib/chat-task-policy";
+import { chatResponseTokenLimit, downloadFormatFromContext, fastWordMode, isDocumentDeliveryFollowup, isDocumentEditFollowup, isImageGeneration, isSpreadsheetRetry, isWordFieldEdit, needsComputation, needsDocumentOutput, needsWebSearch, spreadsheetOperation, isTerraWordCandidate, wantsSpreadsheetFile } from "@/lib/chat-task-policy";
 import { startChatJob } from "@/lib/chat-jobs";
 import { assertContinuationBudget } from "@/lib/token-budget";
 
@@ -385,7 +385,9 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   const simpleWord=fastWordMode(documentPrompt,selectedFiles,computationTask,webSearchTask);
   if (systemProvider === "openai" && (artifactTask || computationTask || selectedFiles.length>0 || webSearchTask)) {
     const jobPrompt = spreadsheetTask && priorSpreadsheetPrompt ? `${priorSpreadsheetPrompt}\n${documentPrompt}` : documentPrompt;
-    return startChatJob({userId:user.id,conversationId:conversation.id,sourceMessageId,prompt:jobPrompt,systemPrompt:`${systemPrompt}\n\n${context.contextNote}`,history:history.map(({role,content})=>({role,content})),documents:selectedFiles,catalog,artifact:artifactTask,compute:computationTask,spreadsheetTask,webSearch:webSearchTask,model:(!routerEnabled||(!simpleWord&&(artifactTask||computationTask||isComplexTask(prompt))))?"gpt-6.1-sol":"gpt-6-luna",locale:user.locale},Boolean(request.headers.get("accept")?.includes("application/x-ndjson")),request.signal);
+    const jobModel = !routerEnabled ? "gpt-6.1-sol" : artifactTask && isTerraWordCandidate(jobPrompt,selectedFiles,computationTask,webSearchTask)
+      ? "gpt-6.1-terra" : !simpleWord && (artifactTask || computationTask || isComplexTask(prompt)) ? "gpt-6.1-sol" : "gpt-6-luna";
+    return startChatJob({userId:user.id,conversationId:conversation.id,sourceMessageId,prompt:jobPrompt,systemPrompt:`${systemPrompt}\n\n${context.contextNote}`,history:history.map(({role,content})=>({role,content})),documents:selectedFiles,catalog,artifact:artifactTask,compute:computationTask,spreadsheetTask,webSearch:webSearchTask,model:jobModel,locale:user.locale},Boolean(request.headers.get("accept")?.includes("application/x-ndjson")),request.signal);
   }
   const wantsStream = request.headers.get("accept")?.includes("application/x-ndjson") && !artifactTask && openAiAttachmentData.length === 0;
   if (wantsStream) {

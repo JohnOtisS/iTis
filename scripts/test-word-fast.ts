@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {zipSync,unzipSync,strToU8,strFromU8} from "fflate";
 import {buildWord,editWord,readEditableWord} from "../lib/word-fast";
-import {fastWordMode} from "../lib/chat-task-policy";
+import {fastWordMode,isTerraWordCandidate} from "../lib/chat-task-policy";
 import {validateOutput} from "../lib/chat-documents";
 const bytes=buildWord({filename:"test.docx",title:"Bản mô tả công việc",summary:"",blocks:[{type:"paragraph",text:"Giữ mã SOURCE-742 và số 120000.",rows:[]},{type:"table",text:"",rows:[["Vai trò","Mức lương"],["Backend Developer","Thỏa thuận"]]}]});
 validateOutput(bytes,"test.docx");
@@ -23,6 +23,15 @@ assert.equal(fastWordMode("Chuyển PDF sang Word",[{name:"source.pdf"}],false,f
 assert.equal(fastWordMode("Tạo Word và PowerPoint",[],false,false),null);
 assert.equal(fastWordMode("Dựa vào kế hoạch của tỉnh, xuất Word",[],false,false),null);
 assert.equal(fastWordMode("Điền số văn bản 12/KH-UBND",[{name:"ke-hoach.docx"}],false,false),"edit");
+const pdfSources = [{name:"base.pdf"},{name:"amendment.pdf"}];
+assert.equal(isTerraWordCandidate("Ban hành ra bản Word",pdfSources,false,false),true);
+assert.equal(isTerraWordCandidate("Đổi tên người ký trong file Word",[{name:"source.docx"}],false,false),true);
+assert.equal(isTerraWordCandidate("Chuyển PDF sang Word",pdfSources,false,false),false);
+assert.equal(isTerraWordCandidate("Dùng OCR rồi xuất Word",pdfSources,false,false),false);
+assert.equal(isTerraWordCandidate("Soạn và xuất Word",pdfSources,true,false),false);
+assert.equal(isTerraWordCandidate("Soạn và xuất Word",pdfSources,false,true),false);
+assert.equal(isTerraWordCandidate("Soạn và xuất Word",[...pdfSources,{name:"budget.xlsx"}],false,false),false);
+assert.equal(isTerraWordCandidate("Xuất Word và PDF",pdfSources,false,false),false);
 const blankForm=buildWord({filename:"blank.docx",title:"Kế hoạch",summary:"",blocks:[
   {type:"paragraph",text:"Số văn bản: …/KH-UBND",rows:[]},
   {type:"paragraph",text:"Ngày ký: …",rows:[]},

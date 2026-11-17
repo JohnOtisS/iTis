@@ -27,6 +27,7 @@ const terminal=terminalProviderUsage({type:"response.incomplete",response:{usage
 assert.equal(terminal?.completed,false);assert.equal(terminal?.incomplete,true);assert.equal(taskUsage(terminal?.usage).total_tokens,1250);
 assert.equal(terminalProviderUsage({type:"response.output_text.delta",delta:"abc"}),null);
 assert.equal(estimateModelCost("gpt-6.1-sol",{input_tokens:100,output_tokens:20,input_tokens_details:{cached_tokens:40,cache_write_tokens:10}}),(50*2+10*2*1.25+40*.1+20*10)/1e6);
+assert.equal(estimateModelCost("gpt-6.1-terra",{input_tokens:100,output_tokens:20,input_tokens_details:{cached_tokens:40,cache_write_tokens:10}}),(50+10*1.25+40*.05+20*5)/1e6);
 console.log("PASS intent exclusions, source type/version ambiguity, exact text/table/code export, no duplicated title, reasoning/cache-write accounting");
 
 for(const prompt of ["xuất bản W","xuất wodr","xuất wrod"])assert.equal(localArtifactIntent(prompt),"export",prompt);

@@ -42,6 +42,9 @@ export function isRequestedDeliverable(name:string,extensions:string[]){
 export function deliverableInstruction(extensions:string[]){
   return extensions.length?`Deliver ONLY these requested output formats: ${extensions.join(", ")}. Do not generate extra formats, PDF previews, OCR dumps or debug exports unless necessary internally; never cite internal files. Return file citations only, plus at most one short essential caveat. Do not repeat the document text in chat.`:"Return only the requested final deliverables, never intermediate OCR/debug/validation files. Do not repeat the document text in chat.";
 }
+export function asksForSingleDeliverable(prompt: string) {
+  return /\b(?:xuat|tao|gui|return|create|deliver|export)\s+(?:(?:ra|dung|duy nhat|exactly|only)\s+)*(?:mot|one|1)\s+(?:(?:tep|file|ban|workbook|document)\s+)*(?:tep|file|ban|workbook|document|\.?docx|word|\.?xlsx|excel|\.?pdf|\.?pptx|powerpoint|\.?csv|\.?txt|\.?md)\b/.test(documentRequestText(prompt));
+}
 export function sourceFormatText(prompt:string){
   const text=documentRequestText(prompt);
   const from=sourceClause.exec(text);

@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import {deliverableExtensions,documentSourceLabels,isRequestedDeliverable,outputExtensions,needsFullDocumentReview,sourceCoverageIssues} from "../lib/document-request";
+import {asksForSingleDeliverable,deliverableExtensions,documentSourceLabels,isRequestedDeliverable,outputExtensions,needsFullDocumentReview,sourceCoverageIssues} from "../lib/document-request";
 import {selectDocuments,namedDocuments} from "../lib/chat-documents";
 import {downloadFormatFromContext,needsDocumentOutput} from "../lib/chat-task-policy";
 import {readChatEvents} from "../lib/chat-stream";
 import {taskFailureText} from "../lib/task-failure";
 async function main(){
+  assert.equal(asksForSingleDeliverable("Đọc DOC và XLS gốc. Xuất một XLSX gồm kết quả."),true);
+  assert.equal(asksForSingleDeliverable("Xuất đúng một tệp .md"),true);
+  assert.equal(asksForSingleDeliverable("Xuất hai file Excel, mỗi nhóm một file."),false);
   for(const prompt of ["xuất bản W","xuất wodr","xuất wrod","xuất bản Word từ file PDF","Soạn kế hoạch dựa trên PDF, xuất Word"]){
     const formats=outputExtensions(prompt);assert.deepEqual(formats,[".docx"],prompt);
     assert.equal(isRequestedDeliverable("final.docx",formats),true);

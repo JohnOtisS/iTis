@@ -15,7 +15,9 @@ export function taskUsage(usage?:ProviderUsage, extra:Partial<TaskUsage>={}):Tas
 }
 export function estimateModelCost(model:string,usage:ProviderUsage) {
   const u=taskUsage(usage);
-  const prices=model==="gpt-6.1-sol"?{input:2,cached:.1,output:10}:{input:.1,cached:.01,output:.5};
+  const prices = model === "gpt-6.1-sol" ? {input:2,cached:.1,output:10}
+    : model === "gpt-6.1-terra" ? {input:1,cached:.05,output:5}
+    : {input:.1,cached:.01,output:.5};
   // Cache writes are distinct from ordinary input on supported models. Still an estimate.
   const cached=Math.min(u.input_tokens,u.cached_tokens),written=Math.min(u.input_tokens-cached,u.cache_write_tokens);
   return ((u.input_tokens-cached-written)*prices.input+written*prices.input*1.25+cached*prices.cached+u.output_tokens*prices.output)/1e6;

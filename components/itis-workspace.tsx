@@ -3244,7 +3244,7 @@ function UsageView({
           </div>
         </section>
       </div>
-      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <MetricCard
           icon={BrainCircuit}
           label="GPT-6.1 Sol"
@@ -3264,6 +3264,13 @@ function UsageView({
           ).toLocaleString(numberLocale)}
           note={t("Tokens in cycle", "Token trong chu kỳ")}
           color="#b8ff6b"
+        />
+        <MetricCard
+          icon={BrainCircuit}
+          label="GPT-6.1 Terra"
+          value={(account?.usage.byModel.find((item) => item.model === "gpt-6.1-terra")?.tokens ?? 0).toLocaleString(numberLocale)}
+          note={t("Tokens in cycle", "Token trong chu kỳ")}
+          color="#ffcd72"
         />
         <MetricCard
           icon={Cpu}
@@ -3665,7 +3672,7 @@ function AdminView({
               </span>
             </div>
             <p className="mt-3 text-sm text-muted-foreground">
-              {t("Smart Router: GPT-6 Luna for fast tasks and GPT-6.1 Sol for complex work.", "Smart Router: GPT-6 Luna cho tác vụ nhanh, GPT-6.1 Sol cho tác vụ phức tạp.")}
+              {t("Smart Router uses Luna for quick tasks, Terra for eligible Word work, and Sol for complex work.", "Smart Router dùng Luna cho tác vụ nhanh, Terra cho Word phù hợp và Sol cho tác vụ phức tạp.")}
             </p>
           </section>
           <section className="rounded-2xl border border-white/8 bg-card p-5">
@@ -4902,6 +4909,7 @@ function initials(name: string) {
 function shortModelLabel(model?: string | null) {
   if (!model) return undefined;
   if (model === "gpt-6.1-sol") return "GPT-6.1 Sol";
+  if (model === "gpt-6.1-terra") return "GPT-6.1 Terra";
   if (model === "gpt-6-luna") return "GPT-6 Luna";
   if (model.includes("deepseek")) return "DeepSeek Coder · Local";
   if (model.includes("qwen")) return "Qwen 3.5 9B · Local";

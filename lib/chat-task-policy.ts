@@ -77,6 +77,16 @@ export function fastWordMode(prompt:string,documents:Array<{name:string}>,comput
   if(documents.length===1 && /\.docx$/i.test(documents[0].name) && textEdit)return "edit";
   return null;
 }
+export function isTerraWordCandidate(prompt: string, documents: Array<{name:string}>, compute: boolean, web: boolean) {
+  const text = documentRequestText(prompt);
+  if (compute || web || /\b(?:doi chieu|so sanh|tinh toan|ocr|scan(?:ned)?|pdf quet|giu nguyen bo cuc|keep (?:the )?(?:layout|formatting)|legal analysis|phan tich phap ly)\b/.test(text)) return false;
+  if (fastWordMode(prompt, documents, compute, web) === "edit") return true;
+  const formats = outputExtensions(prompt);
+  return formats.length === 1 && formats[0] === ".docx"
+    && documents.length >= 1 && documents.length <= 3
+    && documents.every(file => /\.pdf$/i.test(file.name))
+    && !/\b(?:chuyen(?: doi)?|convert)\b/.test(text);
+}
 export function isDocumentEditFollowup(prompt:string,hasDocuments:boolean){
   return hasDocuments && (/(?:sửa|chỉnh sửa|cập nhật|thay|đổi).{0,40}(?:file|tệp|tài liệu|tên|vị trí|nội dung|tiêu đề|lương|số lượng|đơn giá)|\b(edit|modify|update|replace)\b/i.test(prompt) || /^(?:hãy\s+)?(?:đổi|thay)\s+.{1,80}\s+(?:thành|sang|bằng)/i.test(prompt));
 }
