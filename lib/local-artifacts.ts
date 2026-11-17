@@ -1,11 +1,12 @@
 import {createHash} from "node:crypto";
-import {and,desc,eq,sql} from "drizzle-orm";
+import {and,asc,desc,eq,sql} from "drizzle-orm";
 import {getDb} from "@/db";
 import {conversations,messages,users} from "@/db/schema";
 import {documentCatalog,validateOutput,versionOutput} from "@/lib/chat-documents";
 import {readChatFile,saveChatFile,type ChatAttachment} from "@/lib/chat-files";
 import {buildWord,wordDraftSchema} from "@/lib/word-fast";
-import {documentKind,isBlockedArtifactSource,localArtifactIntent,pastedWordExportSource,resolveFileReference} from "@/lib/artifact-policy";
+import {contextualWordDelivery,documentKind,isBlockedArtifactSource,isReusableWordDraft,localArtifactIntent,pastedWordExportSource,resolveFileReference} from "@/lib/artifact-policy";
+import {downloadFormatFromContext} from "@/lib/chat-task-policy";
 import {taskUsage} from "@/lib/task-usage";
 
 export function markdownWordDraft(content:string) {
@@ -32,7 +33,7 @@ export function markdownWordDraft(content:string) {
 
 type LocalInput={userId:string;conversationId:string;prompt:string;locale:"en"|"vi";sourceMessageId?:string;format?:"docx"|"txt"|"md"};
 export async function localArtifactAction(input:LocalInput) {
-  if(!input.sourceMessageId&&!localArtifactIntent(input.prompt))return null;
+  if(!input.sourceMessageId&&!localArtifactIntent(input.prompt)&&!contextualWordDelivery(input.prompt))return null;
   return getDb().transaction(async tx=>{
     const lock=await tx.execute(sql`select pg_try_advisory_xact_lock(hashtext(${'artifact:'+input.conversationId})) as acquired`);
     if(!lock.rows[0]?.acquired)throw new Error("ARTIFACT_BUSY");
@@ -41,22 +42,49 @@ export async function localArtifactAction(input:LocalInput) {
 }
 async function performLocalArtifactAction(input:LocalInput) {
   const db=getDb();
-  const intent=input.sourceMessageId?"export":localArtifactIntent(input.prompt);
-  if(!intent)return null;
+  const contextual = input.sourceMessageId ? null : contextualWordDelivery(input.prompt);
+  let intent=input.sourceMessageId?"export":localArtifactIntent(input.prompt);
   // Let the document pipeline handle a new pasted request. Historical pasted
   // drafts below can be exported exactly without another model call.
   if(!input.sourceMessageId && pastedWordExportSource(input.prompt))return null;
   const [owned]=await db.select({id:conversations.id}).from(conversations).where(and(eq(conversations.id,input.conversationId),eq(conversations.userId,input.userId)));
   if(!owned)throw new Error("ARTIFACT_SOURCE_NOT_FOUND");
-  let catalog=await documentCatalog(input.conversationId);
   const t=(en:string,vi:string)=>input.locale==="vi"?vi:en;
   let files:ChatAttachment[]=[];let clarification="";
-  if(intent==="resend"){
+  let expectedHead: string | undefined;
+  if (contextual) {
+    // Local file replies and their requests share a transaction timestamp.
+    const [head, previous] = await db.select().from(messages)
+      .where(and(eq(messages.conversationId,input.conversationId),sql`${messages.role} in ('user', 'assistant')`))
+      .orderBy(desc(messages.createdAt),asc(messages.role),desc(messages.id)).limit(2);
+    if (head?.role!=="assistant") return null;
+    expectedHead = head.id;
+    const previousRequest = previous?.role === "user" ? previous.content : "";
+    const outputs = head.attachments.filter(file => file.kind === "output");
+    const wordOutputs = outputs.filter(file => /\.docx$/i.test(file.name));
+    const priorFormats = downloadFormatFromContext(input.prompt,[previousRequest]);
+    const wordRequested = contextual === "word" || (priorFormats.length === 1 && priorFormats[0] === ".docx");
+    if (wordRequested && wordOutputs.length > 1) {
+      clarification = t("Which Word file should I send? Specify its name.", "Bạn muốn tải tệp Word nào? Hãy nêu tên tệp.");
+      intent = "resend";
+    } else if (wordOutputs.length === 1 && (wordRequested || (!priorFormats.length && outputs.length === 1))) {
+      files = wordOutputs;
+      intent = "resend";
+    } else if (wordRequested && !head.attachments.length && isReusableWordDraft(head.content,previousRequest)) {
+      input = {...input,sourceMessageId:head.id,format:"docx"};
+      intent = "export";
+    } else if (contextual !== "word" || !pastedWordExportSource(previousRequest)) {
+      return null;
+    }
+  }
+  if(!intent)return null;
+  let catalog = files.length || clarification ? [] : await documentCatalog(input.conversationId);
+  if(!files.length && !clarification && intent==="resend"){
     const resolved=resolveFileReference(catalog,input.prompt);
     if(resolved.ambiguous)clarification=t("Which file should I send? Specify its name or version: ","Bạn muốn gửi lại tệp nào? Hãy nêu tên hoặc phiên bản: ")+resolved.files.slice(0,6).map(f=>f.name+` (v${f.version??1})`).join("; ");
     else if(!resolved.files.length)clarification=t("No matching file is saved in this chat. Please specify the file name.","Chưa có tệp phù hợp trong phiên này. Bạn hãy nêu tên tệp cần gửi lại.");
     else files=resolved.files;
-  }else{
+  }else if(!files.length && !clarification){
     // Do not substitute a different format when a request contains several targets.
     const format=input.format??(/markdown|\.md\b/i.test(input.prompt)?"md":/\.txt\b/i.test(input.prompt)?"txt":"docx");
     if(!input.sourceMessageId&&/pdf|excel|xlsx|pptx|powerpoint|csv/i.test(input.prompt))return null;
@@ -122,15 +150,22 @@ async function performLocalArtifactAction(input:LocalInput) {
   for(const file of files)if(!await readChatFile(file.url.replace(/^\/api\/files\//,"")))throw new Error("ARTIFACT_FILE_MISSING");
   const usage=taskUsage(undefined,{usage_complete:true});
   const result={text:clarification,model:"iTis Files",provider:"local",conversationId:input.conversationId,attachments:files,usage,pipeline:intent==="resend"?"reuse_file":"local_export"};
-  await db.transaction(async tx=>{
+  const committed = await db.transaction(async tx=>{
     // Serialize file-only requests, and never leave an orphan result after chat deletion.
     await tx.select({id:users.id}).from(users).where(eq(users.id,input.userId)).for("update");
     const [chat]=await tx.select({id:conversations.id}).from(conversations).where(and(eq(conversations.id,input.conversationId),eq(conversations.userId,input.userId))).for("no key update");
     if(!chat)throw new Error("ARTIFACT_SOURCE_NOT_FOUND");
+    if(expectedHead){
+      const [latest]=await tx.select({id:messages.id}).from(messages)
+        .where(and(eq(messages.conversationId,chat.id),sql`${messages.role} in ('user', 'assistant')`))
+        .orderBy(desc(messages.createdAt),asc(messages.role),desc(messages.id)).limit(1);
+      if(latest?.id!==expectedHead)return false;
+    }
     await tx.insert(messages).values({conversationId:chat.id,role:"user",content:input.prompt,tokenCount:Math.ceil(input.prompt.length/3)});
-    const [answer]=await tx.insert(messages).values({conversationId:chat.id,role:"assistant",content:result.text,model:result.model,attachments:files,taskUsage:usage}).returning({id:messages.id});
+    const [answer]=await tx.insert(messages).values({conversationId:chat.id,role:"assistant",content:result.text,model:result.model,attachments:files,taskUsage:usage,createdAt:sql`clock_timestamp()`}).returning({id:messages.id});
     await tx.update(conversations).set({contextTokens:sql`(select coalesce(sum(token_count),0) from messages where conversation_id=${chat.id})`,updatedAt:new Date()}).where(eq(conversations.id,chat.id));
     Object.assign(result,{messageId:answer.id});
+    return true;
   });
-  return result;
+  return committed ? result : null;
 }

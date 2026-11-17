@@ -1,5 +1,5 @@
 import {documentRequestText} from "@/lib/document-request";
-import {needsWebSearch} from "@/lib/chat-task-policy";
+import {isDocumentDeliveryFollowup, needsWebSearch} from "@/lib/chat-task-policy";
 // Deterministic intent resolution. Ambiguous sources must never trigger a paid guess.
 export function normalizedReference(value: string) {
   return documentRequestText(value).replace(/[_-]+/g," ").replace(/\s+/g," ").trim();
@@ -23,6 +23,24 @@ export function pastedWordExportSource(prompt: string) {
   const instruction = /\b(?:xuất|xuât|xuat|export|chuyển|chuyen|convert)\s+(?:(?:ra|sang|thành|thanh|bản|ban|file|tệp|tep)\s+)*\.?(?:word|wold|wodr|wrod|docx?|w)\b[^\r\n]*$/i.exec(prompt);
   if (!instruction || instruction.index < 160) return null;
   return prompt.slice(0, instruction.index).trim();
+}
+export function contextualWordDelivery(prompt: string): "word" | "download" | null {
+  const text = normalizedReference(prompt);
+  const word = /^(?:(?:ok|ban|hay|vui long|please)\s+)*(?:xuat|ban hanh|gui(?: lai)?|chuyen|export|send|give)(?:\s+(?:ra|sang|thanh|lai|cho|toi|minh|em|anh|me|the|as|a|ban|file|tep))*\s+\.?(?:word|docx)(?:\s+(?:nay|do|tren|moi nhat|vua tao|vua xuat|cho|toi|minh|anh|em|tai xuong|tai ve|de in|de ky|ban hanh|nhe|di|voi|it|please))*[.!?]*$/;
+  if (word.test(text)) return "word";
+  return isDocumentDeliveryFollowup(prompt) && /\b(?:tai xuong|tai ve|download)\b/.test(text) ? "download" : null;
+}
+
+export function isReusableWordDraft(content: string, previousRequest: string) {
+  if (content.length < 160 || isBlockedArtifactSource(content)) return false;
+  const text = normalizedReference(content);
+  const request = normalizedReference(previousRequest);
+  const documentSubject = /\b(?:cong van|bien ban|ke hoach|bao cao|de kiem tra|hop dong|thong bao|to trinh|job description|meeting minutes|letter|report|proposal)\b/;
+  const drafting = /\b(?:soan|viet|lap|du thao|tao|draft|write|prepare|create)\b/;
+  const officialHeader = /^\s*[*#_ ]*(?:cong hoa xa hoi chu nghia viet nam|uy ban nhan dan)\b/m.test(documentRequestText(content));
+  const addresseeOrRecipients = /^\s*[*#_ ]*(?:kinh gui|noi nhan)\b/m.test(documentRequestText(content));
+  return (officialHeader && addresseeOrRecipients)
+    || (documentSubject.test(request) && drafting.test(request) && /\n\s*\S/.test(content) && documentSubject.test(text));
 }
 export function localArtifactIntent(prompt: string): "resend"|"export"|null {
   const text=normalizedReference(prompt);

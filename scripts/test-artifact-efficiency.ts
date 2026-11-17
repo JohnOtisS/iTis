@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
-import {isBlockedArtifactSource,localArtifactIntent,pastedWordExportSource,resolveFileReference} from "../lib/artifact-policy";
+import {contextualWordDelivery,isBlockedArtifactSource,isReusableWordDraft,localArtifactIntent,pastedWordExportSource,resolveFileReference} from "../lib/artifact-policy";
 import {markdownWordDraft} from "../lib/local-artifacts";
 import {buildWord,readEditableWord} from "../lib/word-fast";
 import {estimateModelCost,taskUsage,terminalProviderUsage} from "../lib/task-usage";
 import {fastWordMode} from "../lib/chat-task-policy";
 
 assert.equal(localArtifactIntent("Gửi lại file Word vừa tạo cho tôi"),"resend");
+assert.equal(contextualWordDelivery("ban hành ra bản Word cho tôi ban hành nhé"),"word");
+assert.equal(contextualWordDelivery("xuất bản W"),"word");
+assert.equal(contextualWordDelivery("bạn ban hành cho tôi tải xuống"),"download");
+assert.equal(contextualWordDelivery("xuất Word theo Nghị định 30"),null);
+assert.equal(contextualWordDelivery("đổi người ký rồi xuất Word"),null);
+assert.equal(contextualWordDelivery("xuất Word và PDF"),null);
+assert.equal(contextualWordDelivery("xuất báo cáo tuần 2 ra Word"),null);
+assert.equal(isReusableWordDraft("CÔNG VĂN\nKính gửi: Trường Mẫu.\n"+"Nội dung đã chốt. ".repeat(10),"Soạn công văn cho trường"),true);
+assert.equal(isReusableWordDraft("Dưới đây là hướng dẫn trong ứng dụng. ".repeat(8),"Chỉ tôi cách dùng Word"),false);
 assert.equal(localArtifactIntent("Xuất cái Kế hoạch phía trên ra bản Word"),"export");
 for(const prompt of ["Xuất Word và PDF", "Xuất Word theo Nghị định 30", "Sửa nội dung rồi xuất Word", "Tóm tắt rồi xuất Word", "Không cần xuất Word", "Chuyển Word sang PDF", "Gửi lại file và thay tên công ty", "Soạn Word mới", "Thêm địa chỉ rồi xuất Word", "Ghi nhớ văn bản này và xuất Word", "Chuyển sang tiếng Anh rồi xuất Word", "Xóa phần cũ rồi gửi lại file Word"])
   assert.equal(localArtifactIntent(prompt),null,prompt);

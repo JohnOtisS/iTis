@@ -2,7 +2,7 @@ import {outputExtensions,needsFullDocumentReview} from "@/lib/document-request";
 import {getUploadLimits} from "@/lib/upload-limits";
 import {uploadError} from "@/lib/upload-policy";
 import {localArtifactAction} from "@/lib/local-artifacts";
-import {localArtifactIntent} from "@/lib/artifact-policy";
+import {contextualWordDelivery, localArtifactIntent} from "@/lib/artifact-policy";
 import {taskUsage,estimateModelCost,terminalProviderUsage} from "@/lib/task-usage";
 import {documentMemoryRequest,documentMemoryOnly,documentMemoryNotice,uploadRememberedDocument,rememberDocument,retrieveDocumentMemory,type DocumentMemoryResult} from "@/lib/memory-documents";
 import { and, desc, eq, gte, ne, sql } from "drizzle-orm";
@@ -178,7 +178,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   const invalidUpload=uploadError(attachments,uploadLimits,user.locale==="vi");
   if(invalidUpload)return NextResponse.json({code:"UPLOAD_LIMIT",error:invalidUpload,uploadLimits},{status:413});
   // File delivery/export is deterministic and does not require an API key or AI quota.
-  if(!attachments.length && !regenerate && !forceWebSearch && localArtifactIntent(prompt)){
+  if(!attachments.length && !regenerate && !forceWebSearch && (localArtifactIntent(prompt) || (conversationId && contextualWordDelivery(prompt)))){
     if(!conversationId){const [created]=await getDb().insert(conversations).values({userId:user.id,title:makeTitle(prompt,user.locale)}).returning();conversationId=created.id;}
     try{const result=await localArtifactAction({userId:user.id,conversationId,prompt,locale:user.locale});if(result)return NextResponse.json(result);}
     catch(error){
