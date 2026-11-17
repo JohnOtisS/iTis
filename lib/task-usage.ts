@@ -20,5 +20,7 @@ export function estimateModelCost(model:string,usage:ProviderUsage) {
     : {input:.1,cached:.01,output:.5};
   // Cache writes are distinct from ordinary input on supported models. Still an estimate.
   const cached=Math.min(u.input_tokens,u.cached_tokens),written=Math.min(u.input_tokens-cached,u.cache_write_tokens);
-  return ((u.input_tokens-cached-written)*prices.input+written*prices.input*1.25+cached*prices.cached+u.output_tokens*prices.output)/1e6;
+  const longContext = u.input_tokens > 272_000;
+  const inputCost = (u.input_tokens-cached-written)*prices.input+written*prices.input*1.25+cached*prices.cached;
+  return (inputCost*(longContext?2:1)+u.output_tokens*prices.output*(longContext?1.5:1))/1e6;
 }

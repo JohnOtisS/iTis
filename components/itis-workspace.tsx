@@ -190,6 +190,8 @@ type UserMemory = {
   createdAt: string;
   updatedAt: string;
 };
+type ModelCost = { model: string; tokens: number; costUsd: number; toolCostUsd: number };
+
 type Member = {
   allowMultipleSessions: boolean;
   lastSeenAt: string | null;
@@ -355,6 +357,7 @@ export function ItisWorkspace({
   const [members, setMembers] = useState<Member[]>(
     () => cachedWorkspace.members ?? [],
   );
+  const [modelCosts, setModelCosts] = useState<ModelCost[] | null>(null);
   const [settings, setSettings] = useState<Settings>(
     () => cachedWorkspace.settings ?? defaultSettings,
   );
@@ -549,14 +552,17 @@ export function ItisWorkspace({
         ]);
         if (!usersRes.ok || !settingsRes.ok)
           throw new Error(t("Unable to load admin data.", "Không tải được dữ liệu quản trị."));
-        const nextMembers = ((await usersRes.json()) as { users: Member[] })
-          .users;
+        const { users: nextMembers, usageByModel } = (await usersRes.json()) as {
+          users: Member[];
+          usageByModel?: ModelCost[];
+        };
         const nextSettings = (
           (await settingsRes.json()) as { settings: Settings }
         ).settings;
         workspaceCache.members = nextMembers;
         workspaceCache.settings = nextSettings;
         setMembers(nextMembers);
+        setModelCosts(usageByModel ?? null);
         setSettings(nextSettings);
       }
     } catch (error) {
@@ -1392,6 +1398,7 @@ export function ItisWorkspace({
         {view === "admin" && account?.user.role === "admin" && (
           <AdminView
             members={members}
+            modelCosts={modelCosts}
             settings={settings}
             account={account}
             reload={loadData}
@@ -3478,12 +3485,14 @@ function BrandingEditor({
 
 function AdminView({
   members,
+  modelCosts,
   settings,
   account,
   reload,
   setSettings,
 }: {
   members: Member[];
+  modelCosts: ModelCost[] | null;
   settings: Settings;
   account: Account;
   reload: () => Promise<void>;
@@ -3494,7 +3503,11 @@ function AdminView({
     (sum, member) => sum + member.usedTokens,
     0,
   );
-  const totalCost = members.reduce((sum, member) => sum + member.costUsd, 0);
+  const totalCost = modelCosts?.reduce((sum, model) => sum + model.costUsd, 0)
+    ?? members.reduce((sum, member) => sum + member.costUsd, 0);
+  const formatUsd = new Intl.NumberFormat(numberLocale, {
+    style: "currency", currency: "USD", minimumFractionDigits: 4, maximumFractionDigits: 6,
+  }).format;
   async function updateSettings(patch: Partial<Settings>) {
     const response = await fetch("/api/admin/settings", {
       method: "PATCH",
@@ -3532,9 +3545,9 @@ function AdminView({
           />
           <MetricCard
             icon={Coins}
-            label={t("Recorded OpenAI cost", "Chi phí OpenAI ghi nhận")}
-            value={`$${totalCost.toFixed(4)}`}
-            note={t("Total from actual usage", "Tổng theo usage thật")}
+            label={t("Estimated OpenAI cost", "Chi phí OpenAI ước tính")}
+            value={formatUsd(totalCost)}
+            note={t("From recorded token and tool usage", "Theo token và công cụ đã ghi nhận")}
             color="#63e6d4"
           />
           <MetricCard
@@ -3552,6 +3565,35 @@ function AdminView({
             color="#ffcb66"
           />
         </div>
+
+        {modelCosts && modelCosts.length > 0 && (
+          <section className="mt-4 rounded-3xl border border-white/8 bg-card p-4 sm:p-6">
+            <h3 className="font-semibold">{t("Cost by model", "Chi phí theo model")}</h3>
+            <p className="mt-1 text-xs text-muted-foreground">{t("All retained usage records · USD estimates", "Toàn bộ số liệu sử dụng còn lưu · USD ước tính")}</p>
+            <table className="mt-3 w-full table-fixed text-xs sm:text-sm">
+              <thead className="text-muted-foreground">
+                <tr className="border-b border-white/8">
+                  <th scope="col" className="w-[28%] py-2 text-left font-medium sm:w-2/5">Model</th>
+                  <th scope="col" className="py-2 text-right font-medium">Token</th>
+                  <th scope="col" className="py-2 text-right font-medium">{t("Model cost", "Phí model")}</th>
+                  <th scope="col" className="py-2 text-right font-medium">{t("Tools", "Công cụ")}</th>
+                  <th scope="col" className="py-2 text-right font-medium">{t("Total", "Tổng")}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/8">
+                {modelCosts.map(row => (
+                  <tr key={row.model} className="tabular-nums">
+                    <th scope="row" className="py-2 pr-2 text-left font-medium [overflow-wrap:anywhere]">{shortModelLabel(row.model)}</th>
+                    <td className="py-2 text-right [overflow-wrap:anywhere]">{row.tokens.toLocaleString(numberLocale)}</td>
+                    <td className="py-2 text-right [overflow-wrap:anywhere]">{formatUsd(Math.max(0, row.costUsd - row.toolCostUsd))}</td>
+                    <td className="py-2 text-right [overflow-wrap:anywhere]">{formatUsd(row.toolCostUsd)}</td>
+                    <td className="py-2 text-right font-semibold [overflow-wrap:anywhere]">{formatUsd(row.costUsd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
 
         <AdminNotifications vi={account.user.locale === "vi"} members={members}/>
 

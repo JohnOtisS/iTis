@@ -70,8 +70,30 @@ export async function GET() {
     .leftJoin(usageEvents, eq(usageEvents.userId, users.id))
     .groupBy(users.id)
     .orderBy(asc(users.createdAt));
+  const modelUsage = await getDb()
+    .select({
+      model: usageEvents.model,
+      tokens: sql<string>`coalesce(sum(${usageEvents.inputTokens} + ${usageEvents.outputTokens}), 0)`,
+      costUsd: sql<string>`coalesce(sum(${usageEvents.estimatedCostUsd}), 0)`,
+      toolCostUsd: sql<string>`coalesce(sum(${usageEvents.toolCostUsd}), 0)`,
+    })
+    .from(usageEvents)
+    .groupBy(usageEvents.model)
+    .orderBy(sql`sum(${usageEvents.estimatedCostUsd}) desc`, asc(usageEvents.model));
+  const usageByModel = modelUsage.map(row => ({
+    model: row.model,
+    tokens: Number(row.tokens),
+    costUsd: Number(row.costUsd),
+    toolCostUsd: Number(row.toolCostUsd),
+  }));
+  for (const model of ["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"]) {
+    if (!usageByModel.some(row => row.model === model)) {
+      usageByModel.push({ model, tokens: 0, costUsd: 0, toolCostUsd: 0 });
+    }
+  }
   return NextResponse.json(
     {
+      usageByModel,
       users: rows.map((row) => ({
         ...row,
         accessExpired: accountAccessExpired(row.accessExpiresAt),
