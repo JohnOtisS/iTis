@@ -20,7 +20,7 @@ import { externalSafetyIdentifier } from "@/lib/privacy";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { buildChatContext } from "@/lib/chat-context";
 import { documentCatalog, namedDocuments, selectDocuments } from "@/lib/chat-documents";
-import { chatResponseTokenLimit, downloadFormatFromContext, fastWordMode, isDocumentDeliveryFollowup, isDocumentEditFollowup, isImageGeneration, isSpreadsheetRetry, isWordFieldEdit, needsComputation, needsDocumentOutput, needsWebSearch, spreadsheetOperation, isTerraWordCandidate, wantsSpreadsheetFile } from "@/lib/chat-task-policy";
+import { chatResponseTokenLimit, documentTaskFromContext, downloadFormatFromContext, fastWordMode, isDocumentDeliveryFollowup, isDocumentTaskFollowup, isDocumentEditFollowup, isImageGeneration, isSpreadsheetRetry, isWordFieldEdit, needsComputation, needsDocumentOutput, needsWebSearch, spreadsheetOperation, isTerraWordCandidate, wantsSpreadsheetFile } from "@/lib/chat-task-policy";
 import { startChatJob } from "@/lib/chat-jobs";
 import { assertContinuationBudget } from "@/lib/token-budget";
 
@@ -318,12 +318,13 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
     sourceMessageId=source?.id??null;
   }
   const explicitOutput = needsDocumentOutput(prompt);
-  const context = await buildChatContext(conversation.id,prompt,maxContextTokens,{compact:explicitOutput||attachments.length>0||needsComputation(prompt,true),documentFollowup:isDocumentDeliveryFollowup(prompt)});
+  const context = await buildChatContext(conversation.id,prompt,maxContextTokens,{compact:explicitOutput||attachments.length>0||needsComputation(prompt,true),documentFollowup:isDocumentDeliveryFollowup(prompt)||isDocumentTaskFollowup(prompt)});
   const history = context.history.filter(item => item.role === "user" || item.role === "assistant");
   const priorUserRequests = history.filter(message=>message.role==="user").slice(0,-1).map(message=>message.content);
   const inferredFormats = downloadFormatFromContext(prompt,priorUserRequests);
-  const documentOutput = explicitOutput || inferredFormats.length>0;
-  const documentPrompt = inferredFormats.length ? `${prompt}\nXuất tệp ${inferredFormats.join(", ")} theo yêu cầu gần nhất.` : prompt;
+  const continuedDocument = documentTaskFromContext(prompt,priorUserRequests);
+  const documentOutput = explicitOutput || inferredFormats.length>0 || Boolean(continuedDocument);
+  const documentPrompt = continuedDocument ?? (inferredFormats.length ? `${prompt}\nXuất tệp ${inferredFormats.join(", ")} theo yêu cầu gần nhất.` : prompt);
   const rememberedContext=user.memoryEnabled?await retrieveDocumentMemory(user.id,prompt):{context:"",files:[] as ChatAttachment[]};
   const rememberedFileTask=documentOutput||isDocumentEditFollowup(prompt,true)||needsComputation(prompt,true);
   const catalog = [...await documentCatalog(conversation.id),...(rememberedFileTask?rememberedContext.files:[])];
@@ -335,7 +336,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   const referencesFiles = spreadsheetRequest || documentOutput || needsFullDocumentReview(prompt,catalog.length) || /file|tệp|tài liệu|dữ liệu|bảng|sheet|slide|cột|dòng|đối chiếu|so sánh|tổng|số liệu|excel|pdf|docx|pptx|potx|powerpoint|csv|xlsx|word|document|data|table|row|column|compare|total|continue|tiếp tục|làm tiếp|sửa|chỉnh|đổi|thay/i.test(prompt) || namedDocuments(catalog,prompt).length>0;
   const latestUpload = history.findLast(message=>message.role==="user"&&message.attachments.length>0)?.attachments;
   const selectionPrompt = priorSpreadsheetPrompt ?? prompt;
-  const selectionCatalog = (spreadsheetRetry || inferredFormats.length>0) && latestUpload?.length && !namedDocuments(catalog,selectionPrompt).length ? latestUpload : catalog;
+  const selectionCatalog = (spreadsheetRetry || inferredFormats.length>0 || continuedDocument) && latestUpload?.length && !namedDocuments(catalog,selectionPrompt).length ? latestUpload : catalog;
   const wordFieldEdit = isWordFieldEdit(prompt);
   const latestWordOutputs = history.findLast(message=>message.role==="assistant")?.attachments.filter(file=>file.kind==="output" && /\.docx$/i.test(file.name)) ?? [];
   const wordEditSource = wordFieldEdit && !namedDocuments(catalog,prompt).length && latestWordOutputs.length===1 ? latestWordOutputs[0] : undefined;

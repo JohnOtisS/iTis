@@ -60,6 +60,7 @@ export function needsFullDocumentReview(prompt:string,count:number){
   if(count===0)return false;
   const text=documentRequestText(prompt);
   return /toan bo|tat ca|day du|full review|(?:every|all) (?:rows?|sheets?|pages?|slides?|sections?)|exhaustive/.test(text)
+    || /\b(?:danh sach|nhan su|can bo|ho ten|roster|personnel|named individuals)\b/.test(text)
     || /\b(?:(?:trang|page|slide)\s+\d+|header|footer|dau trang|chan trang|footnotes?|chu thich cuoi trang|speaker notes|ghi chu thuyet trinh|bo cuc|layout|pdf quet|scanned|ocr)\b/.test(text)
     || count>1&&/phan tich|doi chieu|so sanh|tong hop|\bloc\b|trung khop|analy[sz]|compare|reconcile|synthesi[sz]|\bfilter\b/.test(text);
 }

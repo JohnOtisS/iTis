@@ -60,6 +60,26 @@ export function downloadFormatFromContext(prompt: string, previousUserRequests: 
   const previous=previousUserRequests.findLast(value=>!/^(?:ok(?:ay)?|duoc|dong y|vang|yes|uh|u)[.!?]*$/.test(documentRequestText(value).trim()));
   return previous && needsDocumentOutput(previous) ? outputExtensions(previous) : [];
 }
+export function isDocumentTaskFollowup(prompt: string) {
+  const text = documentRequestText(prompt).trim();
+  if (/\b(?:khong (?:can )?(?:xuat|tao)|chi tra loi|chi phan tich|do not create|answer only)\b/.test(text)) return false;
+  return /^(?:(?:ban|hay|vui long|please)\s+)*(?:lam lai|thu lai|tiep tuc|lam tiep|sua lai|chinh lai|dien(?: them| day du)?|bo sung|cap nhat|retry|try again|continue|redo|update)\b/.test(text)
+    || /^(?:ten (?:ubnd|co quan)|ubnd (?:phuong|xa)|nguoi ky|co quan ban hanh)\b/.test(text);
+}
+
+export function documentTaskFromContext(prompt: string, previousUserRequests: string[]) {
+  if (!isDocumentTaskFollowup(prompt) || outputExtensions(prompt).length) return null;
+  const relevant: string[] = [];
+  for (const request of [...previousUserRequests].reverse()) {
+    const formats = outputExtensions(request);
+    if (needsDocumentOutput(request) && formats.length) {
+      return [request,...relevant.reverse(),prompt].join("\n");
+    }
+    if (!isDocumentTaskFollowup(request) && !/^(?:ok|duoc|yes)[.!?]*$/.test(documentRequestText(request).trim())) return null;
+    relevant.push(request);
+  }
+  return null;
+}
 export const requestedExtensions=outputExtensions;
 export function isWordFieldEdit(prompt: string) {
   return /^(?:(?:hay|vui long|please)\s+)?(?:dien(?: them| lai)?|bo sung|cap nhat|fill in|insert|update)\s+(?:truong |muc )?(?:so (?:van ban|ke hoach|hieu)|ngay (?:ky|ban hanh)|(?:ten )?nguoi ky|document number|signing date|signer)\b/.test(documentRequestText(prompt).trim());

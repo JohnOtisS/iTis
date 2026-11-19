@@ -481,8 +481,8 @@ export function ItisWorkspace({
   useEffect(() => {
     const query = historyQuery.trim();
     if (!query) {
-      setHistorySearchResults(null);
-      return;
+      const reset = window.setTimeout(() => setHistorySearchResults(null), 0);
+      return () => window.clearTimeout(reset);
     }
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
@@ -616,6 +616,7 @@ export function ItisWorkspace({
       const response = await fetch(`/api/conversations/${id}`, {
         cache: "no-store",
       });
+
       const data = (await response.json()) as {
         error?: string;
         conversation?: Conversation;
@@ -761,19 +762,23 @@ export function ItisWorkspace({
 
   useEffect(() => {
     if (view === "images" && account?.user.imageProvider === "disabled") {
-      setView("chat");
+      const reset = window.setTimeout(() => setView("chat"), 0);
       router.replace("/chat");
+      return () => window.clearTimeout(reset);
     }
   }, [account?.user.imageProvider, router, view]);
 
   useEffect(() => {
     if(requestAbortRef.current&&liveConversationRef.current===initialConversationId)return;
-    setView(initialView);
-    setConversationId(initialConversationId);
-    void loadData();
-    if (initialConversationId)
-      void loadConversation(initialConversationId, false);
-    else if (initialView === "chat") setMessages([]);
+    const navigation = window.setTimeout(() => {
+      setView(initialView);
+      setConversationId(initialConversationId);
+      void loadData();
+      if (initialConversationId)
+        void loadConversation(initialConversationId, false);
+      else if (initialView === "chat") setMessages([]);
+    }, 0);
+    return () => window.clearTimeout(navigation);
     // Initial route props are the navigation source of truth.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialView, initialConversationId]);
@@ -978,6 +983,7 @@ export function ItisWorkspace({
         setAttachedFiles([]);
         return;
       }
+      if (!responseType.includes("application/json")) throw new Error(`HTTP ${response.status}`);
       const data = (await response.json()) as {
         text?: string;
         error?: string;
@@ -1028,7 +1034,9 @@ export function ItisWorkspace({
         }
         return;
       }
-      if(retryConversationId)setTaskFailure({conversationId:retryConversationId,message:taskFailureText(error instanceof Error?error.message:t("Request failed.","Gửi yêu cầu thất bại."),locale==="vi")});
+      const failureMessage = taskFailureText(error instanceof Error?error.message:t("Request failed.","Gửi yêu cầu thất bại."),locale==="vi");
+      setPrompt(current=>current || clean);
+      if(retryConversationId)setTaskFailure({conversationId:retryConversationId,message:failureMessage});
       if(streamedMessageId)setMessages(current=>current.filter(item=>item.id!==streamedMessageId||Boolean(item.content)));
       setMessages((current) => [
         ...current,
@@ -1036,7 +1044,7 @@ export function ItisWorkspace({
           role: "assistant",
           model: selectedModel,
           tokens: 0,
-          content: error instanceof Error ? error.message : t("The connection is busy. Your message has been preserved.", "Kết nối đang bận. Nội dung của bạn vẫn được giữ lại."),
+          content: failureMessage,
           createdAt: new Date().toISOString(),
         },
       ]);

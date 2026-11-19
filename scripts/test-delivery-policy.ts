@@ -1,10 +1,21 @@
 import assert from "node:assert/strict";
 import {asksForSingleDeliverable,deliverableExtensions,documentSourceLabels,isRequestedDeliverable,outputExtensions,needsFullDocumentReview,sourceCoverageIssues} from "../lib/document-request";
 import {selectDocuments,namedDocuments} from "../lib/chat-documents";
-import {downloadFormatFromContext,needsDocumentOutput} from "../lib/chat-task-policy";
+import {documentTaskFromContext,downloadFormatFromContext,needsDocumentOutput} from "../lib/chat-task-policy";
 import {readChatEvents} from "../lib/chat-stream";
 import {taskFailureText} from "../lib/task-failure";
 async function main(){
+  const originalWord = "Từ văn bản trên soạn công văn giữ nguyên danh sách cán bộ, xuất bản wold";
+  const fields = "làm lại điền đầy đủ thông tin, UBND phường Tân Dân, Người ký Phó chủ tịch Hồ Thị Vân";
+  const continued = documentTaskFromContext("làm lại",[originalWord,fields]);
+  assert(continued?.includes(originalWord));
+  assert(continued?.includes(fields));
+  assert.deepEqual(outputExtensions(continued!),[".docx"]);
+  assert.equal(documentTaskFromContext("làm lại",[originalWord,"Giải thích thời tiết hôm nay"]),null);
+  assert.equal(documentTaskFromContext("Chỉ phân tích, không cần xuất Word",[originalWord]),null);
+  assert.equal(documentTaskFromContext("Làm lại, xuất PDF",[originalWord]),null);
+  assert.equal(needsFullDocumentReview("Tìm danh sách cán bộ phường trong PDF",1),true);
+  assert.match(taskFailureText("Failed to fetch",true),/Kết nối/);
   assert.equal(asksForSingleDeliverable("Đọc DOC và XLS gốc. Xuất một XLSX gồm kết quả."),true);
   assert.equal(asksForSingleDeliverable("Xuất đúng một tệp .md"),true);
   assert.equal(asksForSingleDeliverable("Xuất hai file Excel, mỗi nhóm một file."),false);
