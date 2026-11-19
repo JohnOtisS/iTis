@@ -171,7 +171,8 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   }
   const prompt = promptValue?.trim();
   if (!prompt) return NextResponse.json({ error: t("Message content is required.", "Thiếu nội dung.") }, { status: 400 });
-  const fileMemoryIntent=documentMemoryRequest(prompt);
+  const fileMemoryIntent=documentMemoryRequest(prompt,attachments.length>0);
+  const localDocumentMemory = fileMemoryIntent && documentMemoryOnly(prompt) && !regenerate;
   if(fileMemoryIntent&&!user.memoryEnabled)return NextResponse.json({error:t("Personal memory is disabled by your admin.","Admin đã tắt bộ nhớ cá nhân.")},{status:403});
   if (isImageGeneration(prompt)) return NextResponse.json({code:"USE_IMAGE_STUDIO",error:t("Open Image Studio to generate images. Chat handles documents and analysis.","Hãy mở Studio ảnh để tạo hình. Chat xử lý tài liệu và phân tích."),studioUrl:"/images"},{status:422});
   const uploadLimits=await getUploadLimits();
@@ -198,11 +199,11 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   const attachmentData = await Promise.all(attachments.map(async (file) => ({ file, bytes: new Uint8Array(await file.arrayBuffer()) })));
   const settingRows = await getDb().select({ key: appSettings.key, value: appSettings.value }).from(appSettings);
   const settings = Object.fromEntries(settingRows.map((item) => [item.key, item.value]));
-  let relevantMemories = user.memoryEnabled ? await retrieveUserMemories(user.id, prompt, 4) : [];
+  let relevantMemories = user.memoryEnabled && !localDocumentMemory ? await retrieveUserMemories(user.id, prompt, 4) : [];
   const preferredProvider = (settings.ai_environment as { provider?: "local" | "openai" } | undefined)?.provider === "local" ? "local" : "openai";
   const systemProvider: "local" | "openai" = preferredProvider;
   const webSearchTask = forceWebSearch || needsWebSearch(prompt);
-  if (systemProvider === "openai" && !process.env.OPENAI_API_KEY) {
+  if (systemProvider === "openai" && !process.env.OPENAI_API_KEY && !localDocumentMemory) {
     return NextResponse.json({
       code: "OPENAI_NOT_CONFIGURED",
       error: t("The system is set to OpenAI, but OPENAI_API_KEY is not configured on the server.", "Admin đã chuyển toàn hệ thống sang OpenAI nhưng server chưa có OPENAI_API_KEY."),
@@ -228,10 +229,10 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
     .from(usageEvents).where(eq(usageEvents.userId, user.id));
   const usedTokens = Number(total?.used ?? 0);
   const lifetimeUsedTokens = Number(lifetimeTotal?.used ?? 0);
-  if (!user.unlimited && usedTokens >= user.tokenLimit) {
+  if (!localDocumentMemory && !user.unlimited && usedTokens >= user.tokenLimit) {
     return NextResponse.json({ code: "CYCLE_TOKEN_LIMIT", error: t(`You have used all ${user.tokenLimit.toLocaleString("en-US")} tokens in the ${user.resetWindowHours}-hour cycle. Please wait for the next cycle.`, `Bạn đã dùng hết ${user.tokenLimit.toLocaleString("vi-VN")} token trong chu kỳ ${user.resetWindowHours} giờ. Hãy chờ chu kỳ tiếp theo.`) }, { status: 429 });
   }
-  if (!user.totalUnlimited && lifetimeUsedTokens >= user.totalTokenLimit) {
+  if (!localDocumentMemory && !user.totalUnlimited && lifetimeUsedTokens >= user.totalTokenLimit) {
     return NextResponse.json({ code: "TOTAL_TOKEN_LIMIT", error: t(`This account has used all ${user.totalTokenLimit.toLocaleString("en-US")} tokens allocated by the admin. Contact an admin for more.`, `Tài khoản đã dùng hết tổng ${user.totalTokenLimit.toLocaleString("vi-VN")} token được admin cấp. Hãy liên hệ admin để cấp thêm.`) }, { status: 429 });
   }
 
@@ -243,7 +244,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   const maxContextTokens = Number((settings.conversation_limits as { maxContextTokens?: number } | undefined)?.maxContextTokens ?? 50_000);
   const routerEnabled = (settings.model_router as { enabled?: boolean } | undefined)?.enabled ?? true;
   const estimatedPromptTokens = Math.ceil(prompt.length / 3);
-  if ((conversation?.contextTokens ?? 0) + estimatedPromptTokens >= maxContextTokens) {
+  if (!localDocumentMemory && (conversation?.contextTokens ?? 0) + estimatedPromptTokens >= maxContextTokens) {
     return NextResponse.json({
       code: "CONVERSATION_LIMIT_REACHED",
       error: t(`This conversation is near the ${maxContextTokens.toLocaleString("en-US")}-token limit. Select “New chat” to avoid resending deep, expensive context.`, `Cuộc trò chuyện này đã gần chạm giới hạn ${maxContextTokens.toLocaleString("vi-VN")} token. Hãy bấm “Chat mới” để tránh gửi lại context quá sâu và tốn thêm token.`),
@@ -272,11 +273,18 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
     for (const { file, bytes } of attachmentData) {
       if(fileMemoryIntent){
         try{const result=await uploadRememberedDocument(user.id,file,conversation.id);rememberedDocuments.push(result);inputAttachments.push(result.attachment);}
-        catch(error){documentMemoryErrors.push(`${file.name}: ${error instanceof Error?error.message:"Unable to remember document"}`);if(!documentMemoryOnly(prompt))inputAttachments.push(await saveChatFile(bytes,file.name,file.type,"input",user.id));}
+        catch(error){documentMemoryErrors.push(`${file.name}: ${error instanceof Error?error.message:"Unable to remember document"}`);inputAttachments.push(await saveChatFile(bytes,file.name,file.type,"input",user.id));}
       }else inputAttachments.push(await saveChatFile(bytes, file.name, file.type, "input", user.id));
     }
     if(fileMemoryIntent&&!attachments.length){
-      const prior=selectDocuments(await documentCatalog(conversation.id),prompt);
+      const catalog=await documentCatalog(conversation.id);
+      const named=namedDocuments(catalog,prompt);
+      const [lastUpload]=await getDb().select({attachments:messages.attachments}).from(messages)
+        .where(and(eq(messages.conversationId,conversation.id),eq(messages.role,"user"),sql`jsonb_array_length(${messages.attachments}) > 0`))
+        .orderBy(desc(messages.createdAt),desc(messages.id)).limit(1);
+      const previousFiles = lastUpload?.attachments??[];
+      const useLatestUpload = !named.length && /(?:này|vừa gửi|vừa tải|this|these|just uploaded)/i.test(prompt);
+      const prior=selectDocuments(useLatestUpload?previousFiles:catalog,prompt,previousFiles);
       for(const file of prior){try{rememberedDocuments.push(await rememberDocument({userId:user.id,name:file.name,type:file.type,fileUrl:file.url,conversationId:conversation.id}));}catch(error){documentMemoryErrors.push(`${file.name}: ${error instanceof Error?error.message:"Unable to remember document"}`);}}
       if(!prior.length)documentMemoryErrors.push(t("Attach a document to remember, or name one already attached in this chat.","Hãy đính kèm tài liệu cần ghi nhớ, hoặc nêu tên tệp đã gửi trong phiên này."));
     }

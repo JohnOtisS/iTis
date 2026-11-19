@@ -8,6 +8,7 @@ import {users,storedFiles,memoryDocuments,memoryDocumentChunks} from "@/db/schem
 import {encryptMemory,decryptMemory} from "@/lib/memory";
 import {saveChatFile,readChatFile,type ChatAttachment} from "@/lib/chat-files";
 import {inspectDocument} from "@/lib/chat-documents";
+import {documentRequestText} from "@/lib/document-request";
 import {STORAGE_ERROR} from "@/lib/account-storage";
 const MAX_TEXT=500000;
 const digest=(s:string|Uint8Array)=>createHash("sha256").update(s).digest("hex");
@@ -18,7 +19,11 @@ export function memoryTerms(userId:string,text:string){
  const terms=text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d").toLowerCase().match(/[\p{L}\p{N}_-]{2,}/gu)??[];
  return [...new Set(terms.filter(t=>!stop.has(t)))].slice(0,1000).map(t=>createHmac("sha256",key).update(userId+":"+t).digest("hex"));
 }
-export function documentMemoryRequest(prompt:string){
+export function documentMemoryRequest(prompt:string,hasAttachments=false){
+ const normalized=documentRequestText(prompt).trim();
+ const imperative=/^(?:(?:bro|ban|please)[,: ]+)?(?:(?:hay|xin)\s+)?(?:(?:toi|minh) muon (?:ban )?)?(?:ghi nho|nho|luu nho|remember|memorize|save (?:this|these|the)|luu (?:lai )?(?:vao )?bo nho)\b/.test(normalized);
+ const document=/\b(?:file|tep|tai lieu|document|report|spreadsheet|workbook|annex|bao cao|phu luc|bang tinh|pdf|word|docx|excel|xlsx|csv|txt|powerpoint|pptx)\b/.test(normalized);
+ if(imperative&&(document||(hasAttachments&&/\b(?:bo nho|this|these)\b/.test(normalized))))return true;
  const value=prompt.trim();
  return /^(?:(?:bro|bạn|please)[,: ]+)?(?:(?:hãy|xin)\s+)?(?:(?:tôi|mình) muốn (?:bạn )?)?(?:ghi nhớ|nhớ|lưu nhớ|lưu lại|remember|memorize|save).{0,100}(?:file|tệp|tài liệu|document)/i.test(value)
   || /^(?:(?:bro|bạn)[,: ]+)?(?:hãy\s+)?lưu\s+(?:file|tệp|tài liệu).{0,100}(?:vào )?bộ nhớ/i.test(value);
