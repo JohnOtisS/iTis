@@ -152,6 +152,22 @@ export function selectDocuments(catalog: ChatAttachment[], prompt: string, lates
   }
   return [...latest.values()].slice(0,10);
 }
+export function revisionDocumentSources(outputs: ChatAttachment[], catalog: ChatAttachment[]) {
+  const originals = new Map<string,ChatAttachment>();
+  const visited = new Set(outputs.map(file=>file.url));
+  const pending = outputs.flatMap(file=>file.sourceUrls??[]);
+  for (let index=0; index<pending.length; index++) {
+    const url = pending[index];
+    if (visited.has(url)) continue;
+    visited.add(url);
+    const source = catalog.find(file=>file.url===url);
+    if (!source) continue;
+    if (source.kind==="output") pending.push(...source.sourceUrls??[]);
+    else originals.set(url,source);
+  }
+  return [...outputs,...originals.values()];
+}
+
 export function versionOutput(file: ChatAttachment, sources: ChatAttachment[], catalog: ChatAttachment[]): ChatAttachment {
   const previous = sources.find(source => extname(source.name) === extname(file.name));
   const family = previous?.family ?? previous?.url ?? file.url;

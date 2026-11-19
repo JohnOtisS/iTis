@@ -19,7 +19,7 @@ import { consolidateUserMemory, isExplicitMemoryRequest, memoryOnlyRequest } fro
 import { externalSafetyIdentifier } from "@/lib/privacy";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { buildChatContext } from "@/lib/chat-context";
-import { documentCatalog, namedDocuments, selectDocuments } from "@/lib/chat-documents";
+import { documentCatalog, namedDocuments, revisionDocumentSources, selectDocuments } from "@/lib/chat-documents";
 import { chatResponseTokenLimit, documentTaskFromContext, downloadFormatFromContext, fastWordMode, isDocumentDeliveryFollowup, isDocumentTaskFollowup, isDocumentEditFollowup, isImageGeneration, isSpreadsheetRetry, isWordFieldEdit, needsComputation, needsDocumentOutput, needsWebSearch, spreadsheetOperation, isTerraWordCandidate, wantsSpreadsheetFile } from "@/lib/chat-task-policy";
 import { startChatJob } from "@/lib/chat-jobs";
 import { assertContinuationBudget } from "@/lib/token-budget";
@@ -320,7 +320,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   const explicitOutput = needsDocumentOutput(prompt);
   const context = await buildChatContext(conversation.id,prompt,maxContextTokens,{compact:explicitOutput||attachments.length>0||needsComputation(prompt,true),documentFollowup:isDocumentDeliveryFollowup(prompt)||isDocumentTaskFollowup(prompt)});
   const history = context.history.filter(item => item.role === "user" || item.role === "assistant");
-  const priorUserRequests = history.filter(message=>message.role==="user").slice(0,-1).map(message=>message.content);
+  const priorUserRequests = context.taskRequests.slice(0,-1);
   const inferredFormats = downloadFormatFromContext(prompt,priorUserRequests);
   const continuedDocument = documentTaskFromContext(prompt,priorUserRequests);
   const documentOutput = explicitOutput || inferredFormats.length>0 || Boolean(continuedDocument);
@@ -340,9 +340,11 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   const wordFieldEdit = isWordFieldEdit(prompt);
   const latestWordOutputs = history.findLast(message=>message.role==="assistant")?.attachments.filter(file=>file.kind==="output" && /\.docx$/i.test(file.name)) ?? [];
   const wordEditSource = wordFieldEdit && !namedDocuments(catalog,prompt).length && latestWordOutputs.length===1 ? latestWordOutputs[0] : undefined;
+  const revisionSources = continuedDocument && latestWordOutputs.length===1 && !namedDocuments(catalog,prompt).length
+    ? revisionDocumentSources(latestWordOutputs,catalog) : [];
   const selectedFiles = attachmentData.length
     ? [...inputAttachments,...selectDocuments(namedDocuments(catalog.filter(file=>!inputAttachments.some(input=>input.url===file.url)),prompt),prompt)]
-    : wordEditSource ? [wordEditSource] : referencesFiles ? selectDocuments(selectionCatalog,selectionPrompt,latestUpload) : [];
+    : wordEditSource ? [wordEditSource] : revisionSources.length ? revisionSources : referencesFiles ? selectDocuments(selectionCatalog,selectionPrompt,latestUpload) : [];
   const shouldReuseFiles = attachmentData.length === 0 && selectedFiles.length > 0;
   const restoredAttachmentData = shouldReuseFiles
     ? (await Promise.all(selectedFiles.slice(0, 10).map(loadStoredAttachment))).filter((item): item is NonNullable<typeof item> => Boolean(item))

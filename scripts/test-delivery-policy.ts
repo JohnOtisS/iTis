@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {asksForSingleDeliverable,deliverableExtensions,documentSourceLabels,isRequestedDeliverable,outputExtensions,needsFullDocumentReview,sourceCoverageIssues} from "../lib/document-request";
-import {selectDocuments,namedDocuments} from "../lib/chat-documents";
+import {selectDocuments,namedDocuments,revisionDocumentSources} from "../lib/chat-documents";
 import {documentTaskFromContext,downloadFormatFromContext,needsDocumentOutput} from "../lib/chat-task-policy";
 import {readChatEvents} from "../lib/chat-stream";
 import {taskFailureText} from "../lib/task-failure";
@@ -57,6 +57,12 @@ async function main(){
   const pdf={name:"Rules.pdf",url:"pdf",kind:"input" as const};
   const slides={name:"Brand.potx",url:"slides",kind:"input" as const};
   const office=[word,excel,revised,pdf,slides];
+  const priorWord = {...word,url:"draft-v1",kind:"output" as const,sourceUrls:[pdf.url]};
+  const currentWord = {...priorWord,url:"draft-v2",sourceUrls:[priorWord.url]};
+  assert.deepEqual(revisionDocumentSources([currentWord],[pdf,priorWord,currentWord]),[currentWord,pdf]);
+  const cyclicWord = {...priorWord,sourceUrls:[currentWord.url,pdf.url]};
+  assert.deepEqual(revisionDocumentSources([currentWord],[pdf,cyclicWord,currentWord]),[currentWord,pdf]);
+  assert.deepEqual(revisionDocumentSources([currentWord],[currentWord]),[currentWord]);
   for(const {prompt,sources,outputs} of [
     {prompt:"Sửa file Excel rồi xuất PDF.",sources:[revised],outputs:[".pdf"]},
     {prompt:"Chuyển PDF thành một file Word.",sources:[pdf],outputs:[".docx"]},
