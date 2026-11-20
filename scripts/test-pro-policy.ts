@@ -38,6 +38,13 @@ for(const prompt of ["Ai là 10 người cao tuổi nhất?","Đếm có bao nhi
   assert.equal(spreadsheetOperation(prompt),"read");
   assert.equal(wantsSpreadsheetFile(prompt,spreadsheetOperation(prompt)),false);
 }
+for(const prompt of ["hãy định dạng lại  ngày tháng năm sinh trong danh sách trên cho tôi","hãy đưa vào định dạng ngày tháng năm sinh như sau ngày, tháng, năm 4 chữ số","Chuẩn hóa ngày sinh trong dữ liệu dân cư","Format the birth date column as dd/mm/yyyy","Đổi ngày sinh ở cột C","Thêm cột tuổi vào danh sách","Cập nhật công thức tính tổng"]){
+  assert.equal(spreadsheetOperation(prompt),"edit",prompt);
+  assert.equal(wantsSpreadsheetFile(prompt,spreadsheetOperation(prompt)),true,prompt);
+}
+assert.equal(spreadsheetOperation("Hướng dẫn định dạng ngày sinh trong Excel"),null);
+assert.notEqual(spreadsheetOperation("Ngày sinh đang có định dạng gì?"),"edit");
+assert.equal(wantsSpreadsheetFile("Định dạng ngày sinh, chỉ trả lời trong chat","edit"),false);
 assert.equal(spreadsheetOperation("Hướng dẫn cách sắp xếp trong Excel"),null);
 assert.equal(wantsSpreadsheetFile("Xếp theo tuổi, chỉ trả lời trong chat","sort"),false);
 assert.equal(wantsSpreadsheetFile("Lọc người trên 80 tuổi, không cần xuất file","filter"),false);
