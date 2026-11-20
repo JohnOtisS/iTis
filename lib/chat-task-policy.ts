@@ -16,6 +16,15 @@ export function needsComputation(prompt: string, hasDocuments = false) {
   return /\b(calculate|reconcile|variance|sum|formula|statistics|forecast|audit)\b|tính (?:tổng|toán|thuế|lãi)|công thức|đối chiếu|chênh lệch|thống kê|dự báo|kiểm toán/i.test(prompt)
     || (hasDocuments && /\b(vat|total|quantity|amount)\b|tổng|số lượng|thành tiền|doanh thu/i.test(prompt));
 }
+export function canDraftFromOriginalFiles(prompt: string, documents: Array<{name:string;size?:number}>, artifact: boolean, spreadsheetTask: unknown) {
+  const text = documentRequestText(prompt);
+  return !artifact && !spreadsheetTask && documents.length>0
+    && documents.every(file=>/\.(pdf|docx|txt|md)$/i.test(file.name))
+    && documents.every(file=>typeof file.size==="number" && file.size>0)
+    && documents.reduce((sum,file)=>sum+(file.size??0),0)<50*1024*1024
+    && !needsComputation(prompt,true)
+    && /\b(?:soan|viet|tong hop|tom tat|draft|write|synthesi[sz]e|summari[sz]e)\b/.test(text);
+}
 export function spreadsheetOperation(prompt: string) {
   const text = documentRequestText(prompt);
   if (/^\s*(?:(?:hay|vui long|please)\s+)?(?:cach|huong dan|lam sao|how (?:to|do|can)|explain how)\b/.test(text)) return null;

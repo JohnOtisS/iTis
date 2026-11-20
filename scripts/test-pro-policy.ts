@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 import { zipSync, strToU8 } from "fflate";
-import { chatResponseTokenLimit, needsDocumentOutput, requestedExtensions, needsComputation, isImageGeneration, fastWordMode, needsWebSearch, spreadsheetOperation, wantsSpreadsheetFile, isSpreadsheetRetry } from "../lib/chat-task-policy";
+import { canDraftFromOriginalFiles, chatResponseTokenLimit, needsDocumentOutput, requestedExtensions, needsComputation, isImageGeneration, fastWordMode, needsWebSearch, spreadsheetOperation, wantsSpreadsheetFile, isSpreadsheetRetry } from "../lib/chat-task-policy";
 import { deliverableExtensions, isRequestedDeliverable } from "../lib/document-request";
 import { selectDocuments, versionOutput, inspectDocument, spreadsheetIssues, validateOutput } from "../lib/chat-documents";
 import { relevantExcerpt } from "../lib/chat-context";
 
 assert.equal(needsDocumentOutput("Tính tổng từ file, không xuất file."),false);
+const draftFiles = [{name:"guidance.pdf",size:900000},{name:"rules.pdf",size:10000000},{name:"decree.docx",size:83000},{name:"decision.pdf",size:790000}];
+assert.equal(canDraftFromOriginalFiles("Soạn nội dung từ các văn bản đính kèm để hướng dẫn đánh giá các đơn vị",draftFiles,false,null),true);
+assert.equal(canDraftFromOriginalFiles("Từ các văn bản, soạn nội dung và xuất Word",draftFiles,true,null),false);
+assert.equal(canDraftFromOriginalFiles("Soạn báo cáo tính tổng số liệu",draftFiles,false,null),false);
+assert.equal(canDraftFromOriginalFiles("Soạn báo cáo từ Excel",[{name:"source.xlsx",size:8000}],false,"read"),false);
+assert.equal(canDraftFromOriginalFiles("Soạn nội dung từ file",[{name:"source.pdf",size:51*1024*1024}],false,null),false);
+assert.equal(canDraftFromOriginalFiles("Soạn nội dung từ file",[{name:"source.pdf"}],false,null),false);
 assert.equal(needsDocumentOutput("Create a short Word DOCX document titled Deployment Check."),true);
 assert.equal(needsDocumentOutput("Calculate totals; do not create any files."),false);
 assert.deepEqual(requestedExtensions("Từ file CSV gốc, tạo XLSX, DOCX, PDF và PPTX."),[".xlsx",".docx",".pptx",".pdf"]);

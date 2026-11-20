@@ -16,6 +16,8 @@ async function main(){
   assert.equal(documentTaskFromContext("Làm lại, xuất PDF",[originalWord]),null);
   assert.equal(needsFullDocumentReview("Tìm danh sách cán bộ phường trong PDF",1),true);
   assert.match(taskFailureText("Failed to fetch",true),/Kết nối/);
+  assert.match(taskFailureText("TASK_TIMEOUT",true),/vượt quá thời gian/);
+  assert.doesNotMatch(taskFailureText("TASK_TIMEOUT",true),/Đã dừng/);
   assert.equal(asksForSingleDeliverable("Đọc DOC và XLS gốc. Xuất một XLSX gồm kết quả."),true);
   assert.equal(asksForSingleDeliverable("Xuất đúng một tệp .md"),true);
   assert.equal(asksForSingleDeliverable("Xuất hai file Excel, mỗi nhóm một file."),false);

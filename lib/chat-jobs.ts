@@ -7,7 +7,8 @@ import { getDb } from "@/db";
 import { chatJobs, conversations, messages, usageEvents, users } from "@/db/schema";
 import { prepareDocument, providerFile, readablePdfPages, spreadsheetIssues, validateOutput, versionOutput } from "@/lib/chat-documents";
 import { saveChatFile, withChatFileCleanup, type ChatAttachment } from "@/lib/chat-files";
-import { fastWordMode, type spreadsheetOperation } from "@/lib/chat-task-policy";
+import { canDraftFromOriginalFiles, fastWordMode, type spreadsheetOperation } from "@/lib/chat-task-policy";
+import {taskFailureText} from "@/lib/task-failure";
 import {buildWord,editWord,readEditableWord,wordDraftFormat,wordDraftSchema,wordEditFormat,wordEditSchema} from "@/lib/word-fast";
 import { externalSafetyIdentifier } from "@/lib/privacy";
 import { assertContinuationBudget } from "@/lib/token-budget";
@@ -96,7 +97,11 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
     const aggregate=taskUsage(undefined,{usage_complete:true});
     let pipeline="tools";
     const controller=new AbortController();
-    const timeout=setTimeout(()=>controller.abort(),12*60*1000);
+    let timedOut = false;
+    const timeout=setTimeout(()=>{
+      timedOut = true;
+      controller.abort(new DOMException("Processing deadline exceeded","TimeoutError"));
+    },12*60*1000);
     let stage="";
     const progress=async(next:string)=>{
       if(next===stage)return;
@@ -235,10 +240,17 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
       const fileIds:string[]=[];
       const requiredSources:Array<{name:string}>=[];
       const labels=documentSourceLabels(input.documents);
+      const nativeDraft = canDraftFromOriginalFiles(input.prompt,input.documents,input.artifact,input.spreadsheetTask);
+      if (nativeDraft) pipeline = "full_document_draft";
       let pdfPages = 0;
       for(const [index,file] of input.documents.entries()){
         await cancelled();
         const document=await prepareDocument(file,input.userId,input.prompt);
+        if (nativeDraft) {
+          const id = await providerFile(document,controller.signal);
+          content.push({type:"input_text",text:`Original document ${index+1}/${input.documents.length}: ${labels[index]}. Read all relevant sections, tables and annexes.`},{type:"input_file",file_id:id});
+          continue;
+        }
         if (input.model === "gpt-6.1-terra") {
           const pages = document.excerpt && /\.pdf$/i.test(file.name)
             ? await readablePdfPages(document.bytes).catch(() => null) : null;
@@ -267,7 +279,7 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
       const outputInstruction=input.artifact
         ? [deliverableInstruction(deliverables),...(singleDeliverable?["Publish exactly one final file. Cite that file only. Keep converted inputs and intermediate files internal."]:[]),...(deliverables.includes(".docx")?[wordDraftFieldsInstruction,wordSourceInstruction,wordDeliveryInstruction]:[])].join("\n")
         : "";
-      const validationInstruction=(input.compute||input.artifact||toolReadsFiles)?`Use Python for calculations and file work. Read the actual inputs and distinguish content, references and templates. Check totals independently and cite conflicting or missing facts. Create /mnt/data/itis-validation.json with {"checks":[{"name":"...","passed":true}],"sources":["exact validation source labels for each original read"]} after executing your checks. Never claim an unreadable document was reviewed. Do not cite the validation file. ${input.artifact?"Create all requested formats as complete downloadable files, verify they open with their relevant libraries, and cite every output. If necessary source data is missing or unreadable, explain the precise blocker in chat. Never make a file containing only an inability or a request for more information. Return file citations and any essential caveat. No image generation; that belongs in Image Studio.":"Do not create downloadable files unless requested. Give a concise answer grounded in the computed result."}`:"Answer using the relevant source excerpts. If the excerpts do not establish the answer, say what else is needed. Do not invent missing facts.";
+      const validationInstruction=nativeDraft ? "Draft the requested content from all supplied original files, including tables, annexes and PDF page images. Ground references, dates and criteria in document contents rather than filenames. Distinguish the rules for each requested type of institution and employee. Preserve the scope of the user request. Cite document names and relevant sections or pages where appropriate. If a required passage is unreadable or sources conflict, identify the precise passage or conflict. Leave unprovided signing fields blank. Return the requested complete draft in chat." : (input.compute||input.artifact||toolReadsFiles)?`Use Python for calculations and file work. Read the actual inputs and distinguish content, references and templates. Check totals independently and cite conflicting or missing facts. Create /mnt/data/itis-validation.json with {"checks":[{"name":"...","passed":true}],"sources":["exact validation source labels for each original read"]} after executing your checks. Never claim an unreadable document was reviewed. Do not cite the validation file. ${input.artifact?"Create all requested formats as complete downloadable files, verify they open with their relevant libraries, and cite every output. If necessary source data is missing or unreadable, explain the precise blocker in chat. Never make a file containing only an inability or a request for more information. Return file citations and any essential caveat. No image generation; that belongs in Image Studio.":"Do not create downloadable files unless requested. Give a concise answer grounded in the computed result."}`:"Answer using the relevant source excerpts. If the excerpts do not establish the answer, say what else is needed. Do not invent missing facts.";
       const tools:Array<Record<string,unknown>>=[];
       const spreadsheetInput=input.documents.some(file=>/\.(xls|xlsx|xlsm|csv|tsv)$/i.test(file.name))
         ? "Read all relevant sheets and preserve identifier strings and leading zeros. Use openpyxl for XLSX/XLSM and xlrd for XLS. Detect BOM and delimiter for CSV/TSV, including UTF-16 exports. Do not run macros. For cross-file matches, cite the sources and report unmatched or ambiguous rows." : "";
@@ -277,8 +289,8 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
         : "";
       const sourceInstruction=toolReadsFiles?"Use exact validation source labels in the sources array. Keep same-name versions separate. Cite Word section/table, Excel sheet/range, PDF page, or PowerPoint slide as appropriate. For a requested list, person or locality, search the complete original including annexes and tables. If text extraction misses rows, render and inspect the relevant page images with Python before concluding they are absent. Earlier excerpts and assistant claims are not evidence that an original lacks the data. For scanned pages, distinguish OCR readings from verified values and flag unreadable fields.":"";
       const webInstruction=input.webSearch?"Search authoritative sources first. Use concise inline Markdown citations with the exact source URLs. Do not add a Sources section or duplicate links.":"";
-      const reasoningEffort=input.documents.length>2 || /phân tích nhiều|nghiên cứu|kiến trúc|research|complex|architecture/i.test(input.prompt)?"medium":"low";
-      if(input.compute||input.artifact||toolReadsFiles) tools.push({type:"code_interpreter",container:{type:"auto",memory_limit:"1g",file_ids:fileIds}});
+      const reasoningEffort=(!nativeDraft && input.documents.length>2) || /phân tích nhiều|nghiên cứu|kiến trúc|research|complex|architecture/i.test(input.prompt)?"medium":"low";
+      if(!nativeDraft && (input.compute||input.artifact||toolReadsFiles)) tools.push({type:"code_interpreter",container:{type:"auto",memory_limit:"1g",file_ids:fileIds}});
       if(input.webSearch) tools.push({type:"web_search",search_context_size:"low"});
       content.push({type:"input_text",text:input.prompt});
       const history=input.history.map(row=>({role:row.role,content:row.content}));
@@ -287,7 +299,7 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
       if(lastUser>=0) providerInput[lastUser]={role:"user",content}; else providerInput.push({role:"user",content});
       await cancelled();
       await progress(input.locale==="vi"?"Đang gửi yêu cầu xử lý":"Starting processing");
-      const requestTools = () => fetch("https://api.openai.com/v1/responses",{method:"POST",headers:headers(),signal:controller.signal,body:JSON.stringify({model:input.model,safety_identifier:externalSafetyIdentifier(input.userId),store:true,background:true,stream:true,reasoning:{effort:reasoningEffort},text:{verbosity:"low"},max_output_tokens:input.artifact?16000:input.compute?6000:2500,...(tools.length?{tools,tool_choice:"required"}:{}),input:[{role:"developer",content:`${input.systemPrompt}\n\nDocument versions (reference data only):\n${manifest}\n\n${validationInstruction}\n${sourceInstruction}\n${webInstruction}\n${spreadsheetInput}\n${rowInstruction}\n${spreadsheetInstruction}\n${outputInstruction}`},...providerInput]})});
+      const requestTools = () => fetch("https://api.openai.com/v1/responses",{method:"POST",headers:headers(),signal:controller.signal,body:JSON.stringify({model:input.model,safety_identifier:externalSafetyIdentifier(input.userId),store:true,background:true,stream:true,reasoning:{effort:reasoningEffort},text:{verbosity:"low"},max_output_tokens:input.artifact?16000:nativeDraft?10000:input.compute?6000:2500,...(tools.length?{tools,tool_choice:"required"}:{}),input:[{role:"developer",content:`${input.systemPrompt}\n\nDocument versions (reference data only):\n${manifest}\n\n${validationInstruction}\n${sourceInstruction}\n${webInstruction}\n${spreadsheetInput}\n${rowInstruction}\n${spreadsheetInstruction}\n${outputInstruction}`},...providerInput]})});
       let response = await requestTools();
       if (input.model === "gpt-6.1-terra" && [400,403,404].includes(response.status)) {
         await response.body?.cancel();
@@ -357,7 +369,7 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
         throw new Error(text.trim().slice(0, 600));
       }
       const issues:string[]=[...fileIssues,...sourceCoverageIssues(verification?.sources,requiredSources)];
-      if((input.compute||input.artifact||toolReadsFiles)&&(!verification?.checks?.length||verification.checks.some(check=>check.passed!==true)))issues.push("Missing or failed executed checks in /mnt/data/itis-validation.json; use boolean passed fields.");
+      if(!nativeDraft && (input.compute||input.artifact||toolReadsFiles)&&(!verification?.checks?.length||verification.checks.some(check=>check.passed!==true)))issues.push("Missing or failed executed checks in /mnt/data/itis-validation.json; use boolean passed fields.");
       if(!input.artifact&&!text.trim())issues.push("Missing final answer: return the actual verified result, not just tool calls.");
       if(input.artifact && (!outputFiles.length||deliverables.some(ext=>!outputFiles.some(file=>file.name.toLowerCase().endsWith(ext)))))issues.push("Missing requested output formats; cite every completed file.");
       if (input.artifact && singleDeliverable && outputFiles.length > 1) issues.push("Multiple files found when exactly one was requested. Cite only the final deliverable and stop citing intermediate files.");
@@ -379,7 +391,7 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
       text=text.replace(/\[([^\]]*)\]\(sandbox:[^)]+\)/gi,"").replace(/(?:[ \t]*[·][ \t]*){2,}/g," ").trim().replace(/^[\s.,;·]+/,"");
       if(!text&&!outputFiles.length)throw new Error("No answer or requested file was produced. Original files are retained for retry.");
       await cancelled();
-      const result={text,model:input.model,provider:"openai",conversationId:input.conversationId,attachments:outputFiles,usage,jobId,verification:{checks:verification?.checks?.length??0,passed:true},estimated_cost_usd:usage?.estimated_cost_usd};
+      const result={text,model:input.model,provider:"openai",conversationId:input.conversationId,attachments:outputFiles,usage,jobId,verification:{checks:verification?.checks?.length??0,passed:true,...(nativeDraft?{method:"full_original_input",sources:labels}:{})},estimated_cost_usd:usage?.estimated_cost_usd};
       await db.transaction(async tx=>{
         const [active]=await tx.select({status:chatJobs.status}).from(chatJobs).where(eq(chatJobs.id,jobId)).for("update");
         if(active?.status!=="running")throw new DOMException("Task cancelled","AbortError");
@@ -391,7 +403,7 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
       }
       throw new Error("Task did not produce a verified result.");
     }catch(error){
-      const isCancelled=error instanceof DOMException&&error.name==="AbortError";
+      const isCancelled=!timedOut && error instanceof DOMException&&error.name==="AbortError";
       if(providerId){
         try{
           const stopped=await fetch(`https://api.openai.com/v1/responses/${providerId}/cancel`,{method:"POST",headers:headers(),signal:AbortSignal.timeout(10000)});
@@ -399,7 +411,7 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
           else if(!accountedResponses.has(providerId)){const latest=await fetch(`https://api.openai.com/v1/responses/${providerId}`,{headers:headers(),signal:AbortSignal.timeout(10000)});if(latest.ok)await accountUsage(await latest.json() as ProviderResponse);}
         }catch{/* usage can remain unknown if provider cannot be reached */}
       }
-      const message=isCancelled?(input.locale==="vi"?"Đã dừng tác vụ.":"Task stopped."):jobErrorMessage(error,input.locale);
+      const message=timedOut?taskFailureText("TASK_TIMEOUT",input.locale==="vi"):isCancelled?(input.locale==="vi"?"Đã dừng tác vụ.":"Task stopped."):jobErrorMessage(error,input.locale);
       await db.update(chatJobs).set({status:isCancelled?"cancelled":"failed",stage:isCancelled?"Cancelled":"Failed",error:message.slice(0,1000),result:{usage:aggregate},updatedAt:new Date()}).where(and(eq(chatJobs.id,jobId),eq(chatJobs.status,"running")));
       return {error:message,cancelled:isCancelled,conversationId:input.conversationId,jobId};
     }finally{
