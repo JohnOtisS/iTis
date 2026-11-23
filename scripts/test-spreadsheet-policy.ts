@@ -3,7 +3,8 @@ import {zipSync,strToU8} from "fflate";
 import {isSpreadsheetFormattingOnly,spreadsheetDeliverables,singleSpreadsheetOutput,spreadsheetInstructions,spreadsheetOperation,spreadsheetRevisionSources,wantsSpreadsheetFile} from "../lib/spreadsheet-policy";
 import {workbookPreservationIssues,workbookSnapshot} from "../lib/spreadsheet-validation";
 import {deliverableExtensions,outputExtensions} from "../lib/document-request";
-import {spreadsheetIssues} from "../lib/chat-documents";
+import {selectDocuments,spreadsheetIssues} from "../lib/chat-documents";
+import {needsWebSearch} from "../lib/chat-task-policy";
 
 for(const prompt of ["Thêm cột tuổi ở cuối bảng","Bổ sung cột thành tiền và tính theo số lượng * đơn giá","Tách cột họ tên thành hai cột","Gộp hai bảng theo mã hồ sơ","Điền công thức SUMIFS cho từng dòng","Xóa cột ghi chú","Đổi tên sheet thành Tổng hợp","Chỉnh độ rộng cột và xuống dòng","Tô màu ô trống","Cố định hàng đầu bằng freeze panes","Add a column and fill the formula down","Replace values in cells B2:B20","Remove the blank rows","Rename sheet Orders to Sales","Tính cột VAT 8%","Chuẩn hóa ngày sinh"]){
   assert.equal(spreadsheetOperation(prompt),"edit",prompt);
@@ -13,7 +14,13 @@ for(const prompt of ["Xuất sang CSV","Chuyển file sang TSV","Tải phai xcel
 for(const prompt of ["Chuyển Excel qua PDF","Xuất Excel ra PDF","Lưu Excel thành định dạng PDF","Save Excel as PDF","Chuyển Excel thành bảng Word"]){assert.deepEqual(outputExtensions(prompt),prompt.endsWith("Word")?[".docx"]:[".pdf"],prompt);assert.equal(spreadsheetOperation(prompt),"convert",prompt);}
 assert.deepEqual(outputExtensions("Chuyển sheet Data của bản vừa sửa sang CSV, chỉ một CSV, không kèm Excel hay PDF."),[".csv"]);
 assert.deepEqual(outputExtensions("Xuất Word, không gửi Excel và PDF"),[".docx"]);
+assert.deepEqual(outputExtensions("Từ CSV này làm Excel cho tôi"),[".xlsx"]);
+assert.deepEqual(outputExtensions("Sửa Excel rồi gửi Word cho tôi"),[".docx"]);
+assert.deepEqual(outputExtensions("Sửa Excel và trả PDF, không kèm Word"),[".pdf"]);
 assert.match(spreadsheetInstructions("Tính tuổi hôm nay","read",false,"2026-11-23"),/2026-11-23/);
+assert.equal(needsWebSearch("Tính tuổi hôm nay từ ngày sinh trong Excel"),false);
+assert.equal(needsWebSearch("Calculate age today from birth dates"),false);
+assert.equal(needsWebSearch("Tính tuổi hôm nay và tra cứu web quy định"),true);
 for(const prompt of ["Tính tổng doanh thu cho tôi biết","Đối chiếu hai bảng và báo chênh lệch","Có bao nhiêu người đủ 16 tuổi?","Calculate the total amount","Đếm số người, không xóa dòng"]){assert.equal(spreadsheetOperation(prompt),"read",prompt);assert(!wantsSpreadsheetFile(prompt,"read"));}
 for(const prompt of ["Hướng dẫn thêm cột Excel","How do I format dates?","bro hướng dẫn tính tổng","Định dạng ngày sinh là định dạng gì?"]){assert.notEqual(spreadsheetOperation(prompt),"edit",prompt);}
 assert(wantsSpreadsheetFile("Thêm cột tuổi rồi cho tôi biết bao nhiêu ô lỗi","edit"));
@@ -28,6 +35,7 @@ const older={name:"old.xlsx",url:"old",kind:"input" as const};
 assert.deepEqual(spreadsheetRevisionSources([revised,original,older],"Thêm cột tuổi",[revised]),[revised]);
 assert.deepEqual(spreadsheetRevisionSources([revised,original,older],"Chuyển sang PDF",[revised]),[revised]);
 const csv={name:"data.csv",url:"csv",kind:"output" as const};
+assert.deepEqual(selectDocuments([revised,csv],"Từ CSV này làm Excel cho tôi"),[csv]);
 assert.equal(spreadsheetRevisionSources([revised,original],"Chuyển sang PDF",[revised],[{name:"new.docx",url:"word"}]),null);
 assert.deepEqual(spreadsheetRevisionSources([csv,revised,original],"Xuất bản Excel vừa sửa sang PDF",[csv]),[revised]);
 for(const prompt of ["Sửa file gốc","Sửa roster.xlsx","So sánh hai bảng","Gộp tất cả file","Dùng bản 1"]){assert.equal(spreadsheetRevisionSources([revised,original],prompt,[revised]),null,prompt);}

@@ -13,9 +13,9 @@ export function outputExtensions(prompt:string){
   let text=affirmativeDocumentRequest(prompt);
   // A final export after an edit identifies the deliverable, even if the edit
   // mentions a different source format.
-  const exportStep=text.search(/(?:\b(?:roi|sau do|then)\b|[,;.!?\n])\s*(?:hay\s+)?(?:xuat|export|ban hanh)\b/);
-  if(exportStep>=0&&!/\b(?:xuat|export|ban hanh)\b/.test(text.slice(0,exportStep)))text=text.slice(exportStep);
-  const action=text.search(/\b(?:tao|create|generate|xuat|export|ban hanh|chuyen|convert|sua|edit)\b/);
+  const exportStep=text.search(/(?:\b(?:roi|sau do|then|va|and)\b|[,;.!?\n])\s*(?:hay\s+)?(?:xuat|export|ban hanh|gui|send|luu|save|tra|return)\b/);
+  if(exportStep>=0&&!/\b(?:xuat|export|ban hanh|gui|send|luu|save|tra|return)\b/.test(text.slice(0,exportStep)))text=text.slice(exportStep);
+  const action=text.search(/\b(?:tao|create|generate|xuat|export|ban hanh|chuyen|convert|sua|edit|lam|lap|luu|gui|save|send|make|render|tra|return)\b/);
   if(action>=0)text=text.slice(action);
   text=text.split(sourceClause)[0];
   const conversion=text.search(conversionTarget);
@@ -53,7 +53,7 @@ export function sourceFormatText(prompt:string){
   const outputBeforeSource=from&&(/\b(?:xuat|export|tao|create|generate)\b/.test(text.slice(0,from.index)) || deliveryTarget.test(text.slice(0,from.index)));
   const source=from&&outputBeforeSource?text.slice(from.index+from[0].length):text;
   const beforeExport=source.split(/\b(?:xuat|export)\b/)[0].split(deliveryTarget)[0];
-  const beforeCreation=from?beforeExport.split(/\b(?:chuyen|convert|tao|create)\b/)[0]:beforeExport;
+  const beforeCreation=from?beforeExport.split(/\b(?:chuyen|convert|tao|create|lam|lap|luu|gui|save|send|make|render|tra|return)\b/)[0]:beforeExport;
   return beforeCreation.split(conversionTarget)[0];
 }
 export function needsFullDocumentReview(prompt:string,count:number){

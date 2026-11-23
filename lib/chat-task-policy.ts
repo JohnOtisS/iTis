@@ -4,6 +4,8 @@ export function needsWebSearch(prompt: string) {
   const text = documentRequestText(prompt).replace(/`[^`]*`|"[^"]*"|“[^”]*”/g, " ");
   if (/\b(?:khong (?:can )?(?:tra cuu|tim (?:kiem )?(?:web|tren mang)|dung (?:web|internet))|(?:do not|don't|without) (?:use the web|search(?: the web)?|brows(?:e|ing))|(?:chi|only) (?:dua vao (?:tep|file)|use (?:the )?attached (?:file|documents?)))\b/.test(text)) return false;
   if (/\b(?:tra cuu|tim(?: kiem)?|kiem chung|xac minh|search|browse|check|verify|sources?)\b[^.!?\n]{0,50}\b(?:web|internet|online|tren mang)\b|\b(?:fact[ -]?check|look\s*up|nguon chinh thuc|official sources?)\b/.test(text)) return true;
+  if(!/https?:\/\/|\b(?:gia|price|ty gia|ti gia|exchange rate|luat|nghi dinh|quy dinh|thue|tax|law|regulation)\b/.test(text)
+    && /\b(?:tinh tuoi|tinh so ngay giua|calculate age|calculate days between)\b/.test(text))return false;
   if (/^\s*(?:(?:hay|ban|please)\s+)*(?:viet|soan|dich|sua|chinh sua|write|draft|translate|edit)\b/.test(text)) return false;
   if (/\b(?:trong (?:file|tep|tai lieu) (?:dinh kem|vua gui)|in the attached (?:file|document|spreadsheet))\b/.test(text)) return false;
 
