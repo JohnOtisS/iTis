@@ -10,6 +10,10 @@ for(const prompt of ["Thêm cột tuổi ở cuối bảng","Bổ sung cột th�
   assert(wantsSpreadsheetFile(prompt,spreadsheetOperation(prompt)),prompt);
 }
 for(const prompt of ["Xuất sang CSV","Chuyển file sang TSV","Tải phai xcell","Export to PDF","Convert to Word"]){assert.equal(spreadsheetOperation(prompt),"convert",prompt);assert(wantsSpreadsheetFile(prompt,"convert"));}
+for(const prompt of ["Chuyển Excel qua PDF","Xuất Excel ra PDF","Lưu Excel thành định dạng PDF","Save Excel as PDF","Chuyển Excel thành bảng Word"]){assert.deepEqual(outputExtensions(prompt),prompt.endsWith("Word")?[".docx"]:[".pdf"],prompt);assert.equal(spreadsheetOperation(prompt),"convert",prompt);}
+assert.deepEqual(outputExtensions("Chuyển sheet Data của bản vừa sửa sang CSV, chỉ một CSV, không kèm Excel hay PDF."),[".csv"]);
+assert.deepEqual(outputExtensions("Xuất Word, không gửi Excel và PDF"),[".docx"]);
+assert.match(spreadsheetInstructions("Tính tuổi hôm nay","read",false,"2026-11-23"),/2026-11-23/);
 for(const prompt of ["Tính tổng doanh thu cho tôi biết","Đối chiếu hai bảng và báo chênh lệch","Có bao nhiêu người đủ 16 tuổi?","Calculate the total amount","Đếm số người, không xóa dòng"]){assert.equal(spreadsheetOperation(prompt),"read",prompt);assert(!wantsSpreadsheetFile(prompt,"read"));}
 for(const prompt of ["Hướng dẫn thêm cột Excel","How do I format dates?","bro hướng dẫn tính tổng","Định dạng ngày sinh là định dạng gì?"]){assert.notEqual(spreadsheetOperation(prompt),"edit",prompt);}
 assert(wantsSpreadsheetFile("Thêm cột tuổi rồi cho tôi biết bao nhiêu ô lỗi","edit"));

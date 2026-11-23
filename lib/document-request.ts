@@ -1,6 +1,6 @@
 // Interpret output requirements separately from input filenames and intermediate files.
 const sourceClause = /\b(?:(?:tu|(?:su )?dung|dua vao|can cu vao) (?=file\b|tep\b|tai lieu\b|word\b|docx\b|excel\b|xlsx\b|xlsm\b|tsv\b|pdf\b|pptx\b|powerpoint\b|csv\b)|dua tren\b|theo mau\b|based on\b|from (?=(?:the )?(?:file|document|word|docx|excel|xlsx|xlsm|pdf|pptx|powerpoint|csv|tsv)\b))/;
-const conversionTarget = /\b(?:sang|thanh|to|into)\s+(?:(?:file|tep|ban|mot|a|an|the)\s+)*(?=pdf\b|word\b|docx\b|excel\b|xlsx\b|xlsm\b|csv\b|tsv\b|powerpoint\b|pptx\b|txt\b|markdown\b)/;
+const conversionTarget = /\b(?:sang|thanh|qua|ra|to|into|as)\s+(?:(?:file|tep|ban|bang|dinh dang|format|mot|a|an|the)\s+)*(?=pdf\b|word\b|docx\b|excel\b|xlsx\b|xlsm\b|csv\b|tsv\b|powerpoint\b|pptx\b|txt\b|markdown\b)/;
 export const deliveryTarget = /\b(?:ban hanh(?:\s+(?:cho (?:toi|minh|em|anh)))?|ra|gui(?: (?:cho )?(?:toi|minh|em|anh))?|cho (?:toi|minh|em|anh)|send me|give me)\s+(?:(?:ra|sang|thanh|mot|a|an|ban|file|tep|version)\s+)*\.?(?:word|docx|pdf|excel|xlsx|xlsm|csv|tsv|powerpoint|pptx)\b/;
 export function documentRequestText(value:string){
   return value.normalize("NFD").replace(/\p{M}/gu,"").replace(/[đĐ]/g,"d").toLowerCase()
@@ -25,7 +25,7 @@ export function outputExtensions(prompt:string){
 }
 export function affirmativeDocumentRequest(prompt:string){
   return documentRequestText(prompt)
-    .replace(/\b(?:khong(?: can)?|no|without|do not|don't)\s+(?:(?:xuat|tao|render|export|create|generate)\s+)?(?:(?:file|tep|ban|any)\s+)*(?:word|docx|pdf|excel|xlsx|xlsm|csv|tsv|powerpoint|pptx|txt|text|markdown|files?|tep)\b(?:\s+(?:va|hay|hoac|or|and)\s+(?:word|docx|pdf|excel|xlsx|xlsm|csv|tsv|powerpoint|pptx|txt|text|markdown)\b)*/g,"")
+    .replace(/\b(?:khong(?: (?:can|kem|gui|dinh kem))?|no|without|do not|don't)\s+(?:(?:xuat|tao|render|export|create|generate)\s+)?(?:(?:file|tep|ban|any)\s+)*(?:word|docx|pdf|excel|xlsx|xlsm|csv|tsv|powerpoint|pptx|txt|text|markdown|files?|tep)\b(?:\s+(?:va|hay|hoac|or|and)\s+(?:word|docx|pdf|excel|xlsx|xlsm|csv|tsv|powerpoint|pptx|txt|text|markdown)\b)*/g,"")
     .replace(/(?:khong[^.!?\n]*(?:tai lai|upload|attach|dinh kem)[^.!?\n]*)/g,"");
 }
 export function deliverableExtensions(prompt:string,documents:Array<{name:string}>=[]){
