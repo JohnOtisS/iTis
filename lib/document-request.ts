@@ -1,7 +1,7 @@
 // Interpret output requirements separately from input filenames and intermediate files.
-const sourceClause = /\b(?:(?:tu|(?:su )?dung|dua vao|can cu vao) (?=file\b|tep\b|tai lieu\b|word\b|docx\b|excel\b|xlsx\b|pdf\b|pptx\b|powerpoint\b|csv\b)|dua tren\b|theo mau\b|based on\b|from (?=(?:the )?(?:file|document|word|docx|excel|xlsx|pdf|pptx|powerpoint|csv)\b))/;
-const conversionTarget = /\b(?:sang|thanh|to|into)\s+(?:(?:file|tep|ban|mot|a|an|the)\s+)*(?=pdf\b|word\b|docx\b|excel\b|xlsx\b|csv\b|powerpoint\b|pptx\b|txt\b|markdown\b)/;
-export const deliveryTarget = /\b(?:ban hanh(?:\s+(?:cho (?:toi|minh|em|anh)))?|ra|gui(?: (?:cho )?(?:toi|minh|em|anh))?|cho (?:toi|minh|em|anh)|send me|give me)\s+(?:(?:ra|sang|thanh|mot|a|an|ban|file|tep|version)\s+)*\.?(?:word|docx|pdf|excel|xlsx|csv|powerpoint|pptx)\b/;
+const sourceClause = /\b(?:(?:tu|(?:su )?dung|dua vao|can cu vao) (?=file\b|tep\b|tai lieu\b|word\b|docx\b|excel\b|xlsx\b|xlsm\b|tsv\b|pdf\b|pptx\b|powerpoint\b|csv\b)|dua tren\b|theo mau\b|based on\b|from (?=(?:the )?(?:file|document|word|docx|excel|xlsx|xlsm|pdf|pptx|powerpoint|csv|tsv)\b))/;
+const conversionTarget = /\b(?:sang|thanh|to|into)\s+(?:(?:file|tep|ban|mot|a|an|the)\s+)*(?=pdf\b|word\b|docx\b|excel\b|xlsx\b|xlsm\b|csv\b|tsv\b|powerpoint\b|pptx\b|txt\b|markdown\b)/;
+export const deliveryTarget = /\b(?:ban hanh(?:\s+(?:cho (?:toi|minh|em|anh)))?|ra|gui(?: (?:cho )?(?:toi|minh|em|anh))?|cho (?:toi|minh|em|anh)|send me|give me)\s+(?:(?:ra|sang|thanh|mot|a|an|ban|file|tep|version)\s+)*\.?(?:word|docx|pdf|excel|xlsx|xlsm|csv|tsv|powerpoint|pptx)\b/;
 export function documentRequestText(value:string){
   return value.normalize("NFD").replace(/\p{M}/gu,"").replace(/[đĐ]/g,"d").toLowerCase()
     .replace(/\b(?:wold|wodr|wrod|wor[dđ])\b/g,"word")
@@ -20,24 +20,24 @@ export function outputExtensions(prompt:string){
   text=text.split(sourceClause)[0];
   const conversion=text.search(conversionTarget);
   if(conversion>=0)text=text.slice(conversion);
-  const map:Array<[string,RegExp]>=[[".xlsx",/\b(?:xlsx|excel)\b/],[".docx",/\b(?:docx|word)\b/],[".pptx",/\b(?:pptx|powerpoint|slides?)\b/],[".pdf",/\bpdf\b/],[".csv",/\bcsv\b/],[".zip",/\bzip\b/],[".txt",/\btxt\b/],[".md",/\b(?:markdown|md)\b/],[".json",/\bjson\b/]];
+  const map:Array<[string,RegExp]>=[[".xlsx",/\bxlsx\b|\bexcel\b(?![^,;.!?\n]*\bxlsm\b)/],[".xlsm",/\bxlsm\b/],[".docx",/\b(?:docx|word)\b/],[".pptx",/\b(?:pptx|powerpoint|slides?)\b/],[".pdf",/\bpdf\b/],[".csv",/\bcsv\b/],[".tsv",/\btsv\b/],[".zip",/\bzip\b/],[".txt",/\btxt\b/],[".md",/\b(?:markdown|md)\b/],[".json",/\bjson\b/]];
   return map.filter(([,pattern])=>pattern.test(text)).map(([extension])=>extension);
 }
 export function affirmativeDocumentRequest(prompt:string){
   return documentRequestText(prompt)
-    .replace(/\b(?:khong(?: can)?|no|without|do not|don't)\s+(?:(?:xuat|tao|render|export|create|generate)\s+)?(?:(?:file|tep|ban|any)\s+)*(?:word|docx|pdf|excel|xlsx|csv|powerpoint|pptx|txt|text|markdown|files?|tep)\b(?:\s+(?:va|hay|hoac|or|and)\s+(?:word|docx|pdf|excel|xlsx|csv|powerpoint|pptx|txt|text|markdown)\b)*/g,"")
+    .replace(/\b(?:khong(?: can)?|no|without|do not|don't)\s+(?:(?:xuat|tao|render|export|create|generate)\s+)?(?:(?:file|tep|ban|any)\s+)*(?:word|docx|pdf|excel|xlsx|xlsm|csv|tsv|powerpoint|pptx|txt|text|markdown|files?|tep)\b(?:\s+(?:va|hay|hoac|or|and)\s+(?:word|docx|pdf|excel|xlsx|xlsm|csv|tsv|powerpoint|pptx|txt|text|markdown)\b)*/g,"")
     .replace(/(?:khong[^.!?\n]*(?:tai lai|upload|attach|dinh kem)[^.!?\n]*)/g,"");
 }
 export function deliverableExtensions(prompt:string,documents:Array<{name:string}>=[]){
   const explicit=outputExtensions(prompt);
   if(explicit.length)return explicit;
-  const source=[...new Set(documents.map(f=>f.name.toLowerCase().match(/\.(docx|xlsx|pptx|pdf|csv|txt|md)$/)?.[0]).filter((s):s is string=>Boolean(s)))];
+  const source=[...new Set(documents.map(f=>f.name.toLowerCase().match(/\.(docx|xlsx|xlsm|pptx|pdf|csv|tsv|txt|md)$/)?.[0]).filter((s):s is string=>Boolean(s)))];
   return source.length===1?source:[];
 }
 export function isRequestedDeliverable(name:string,extensions:string[]){
   const base=name.split(/[\\/]/).pop()!.toLowerCase();
   if(base==="itis-validation.json")return false;
-  return extensions.length?extensions.some(ext=>base.endsWith(ext)):/\.(docx|xlsx|pptx|pdf|csv|zip|txt|md|json)$/.test(base);
+  return extensions.length?extensions.some(ext=>base.endsWith(ext)):/\.(docx|xlsx|xlsm|pptx|pdf|csv|tsv|zip|txt|md|json)$/.test(base);
 }
 export function deliverableInstruction(extensions:string[]){
   return extensions.length?`Deliver ONLY these requested output formats: ${extensions.join(", ")}. Do not generate extra formats, PDF previews, OCR dumps or debug exports unless necessary internally; never cite internal files. Return file citations only, plus at most one short essential caveat. Do not repeat the document text in chat.`:"Return only the requested final deliverables, never intermediate OCR/debug/validation files. Do not repeat the document text in chat.";

@@ -48,6 +48,8 @@ export function mimeFromName(name: string) {
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ".xls": "application/vnd.ms-excel",
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
+    ".tsv": "text/tab-separated-values",
     ".csv": "text/csv",
     ".txt": "text/plain",
     ".md": "text/markdown",

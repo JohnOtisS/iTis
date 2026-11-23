@@ -68,9 +68,9 @@ export function validateOutput(bytes: Uint8Array, name: string) {
   const extension = extname(name).toLowerCase();
   if (bytes.byteLength === 0) throw new Error(`Empty output file: ${name}`);
   if (extension === ".pdf" && new TextDecoder().decode(bytes.slice(0,5)) !== "%PDF-") throw new Error(`Invalid PDF: ${name}`);
-  if ([".docx", ".xlsx", ".pptx"].includes(extension)) {
+  if ([".docx", ".xlsx", ".xlsm", ".pptx"].includes(extension)) {
     let expanded = 0;
-    const expected = extension === ".docx" ? "word/document.xml" : extension === ".xlsx" ? "xl/workbook.xml" : "ppt/presentation.xml";
+    const expected = extension === ".docx" ? "word/document.xml" : [".xlsx",".xlsm"].includes(extension) ? "xl/workbook.xml" : "ppt/presentation.xml";
     const zip = unzipSync(bytes, { filter: entry => {
       expanded += entry.originalSize;
       if (expanded > 64 * 1024 ** 2) throw new Error("Output archive exceeds validation budget.");
@@ -79,15 +79,25 @@ export function validateOutput(bytes: Uint8Array, name: string) {
     if (!zip[expected] || !zip["[Content_Types].xml"]) throw new Error(`Invalid Office output: ${name}`);
   }
 }
-export function spreadsheetIssues(bytes:Uint8Array,requireFormulas=false){
+export function spreadsheetIssues(bytes:Uint8Array,requireFormulas=false,formattingOriginal?:Uint8Array){
   let expanded=0;
   const files=unzipSync(bytes,{filter:entry=>{if(!/^xl\/worksheets\/sheet\d+\.xml$/.test(entry.name))return false;expanded+=entry.originalSize;if(expanded>32*1024**2)throw new Error("Spreadsheet validation exceeds its size budget.");return true;}});
   const reader=new XMLParser({ignoreAttributes:false,removeNSPrefix:true,parseTagValue:false,processEntities:false});
   const issues:string[]=[];let formulas=0;
   const list=(value:unknown):Array<Record<string,unknown>>=>Array.isArray(value)?value:value&&typeof value==="object"?[value as Record<string,unknown>]:[];
+  const inherited=new Map<string,string>();
+  if(formattingOriginal){
+    let originalExpanded=0;
+    const original=unzipSync(formattingOriginal,{filter:entry=>{if(!/^xl\/worksheets\/sheet\d+\.xml$/.test(entry.name))return false;originalExpanded+=entry.originalSize;if(originalExpanded>32*1024**2)throw new Error("Original spreadsheet exceeds validation budget.");return true;}});
+    for(const [name,xml] of Object.entries(original))for(const row of list(reader.parse(new TextDecoder().decode(xml)).worksheet?.sheetData?.row))for(const cell of list(row.c)){
+      inherited.set(`${name}:${cell["@_r"]}`,JSON.stringify([cell.f,cell.v,cell["@_t"]]));
+    }
+  }
   for(const [name,xml] of Object.entries(files)){
     const parsed=reader.parse(new TextDecoder().decode(xml));
     for(const row of list(parsed.worksheet?.sheetData?.row))for(const cell of list(row.c)){
+      // Formatting must not require inventing missing external/unsupported formula caches.
+      if(inherited.get(`${name}:${cell["@_r"]}`)===JSON.stringify([cell.f,cell.v,cell["@_t"]])){if(cell.f!==undefined)formulas++;continue;}
       if(cell["@_t"]==="e")issues.push(`${name}:${cell["@_r"]} contains spreadsheet error ${String(cell.v)}.`);
       if(cell.f===undefined)continue;formulas++;
       if(cell["@_t"]!=="str"&&(cell.v===undefined||cell.v===""))issues.push(`${name}:${cell["@_r"]} has a formula but no calculated cached value.`);

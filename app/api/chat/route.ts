@@ -21,6 +21,7 @@ import { enforceRateLimit } from "@/lib/rate-limit";
 import { buildChatContext } from "@/lib/chat-context";
 import { documentCatalog, namedDocuments, revisionDocumentSources, selectDocuments } from "@/lib/chat-documents";
 import { chatResponseTokenLimit, documentTaskFromContext, downloadFormatFromContext, fastWordMode, isDocumentDeliveryFollowup, isDocumentTaskFollowup, isDocumentEditFollowup, isImageGeneration, isSpreadsheetRetry, isWordFieldEdit, needsComputation, needsDocumentOutput, needsWebSearch, spreadsheetOperation, isTerraWordCandidate, wantsSpreadsheetFile } from "@/lib/chat-task-policy";
+import {isSpreadsheet,spreadsheetRevisionSources} from "@/lib/spreadsheet-policy";
 import { startChatJob } from "@/lib/chat-jobs";
 import { assertContinuationBudget } from "@/lib/token-budget";
 
@@ -334,7 +335,7 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   const documentOutput = explicitOutput || inferredFormats.length>0 || Boolean(continuedDocument);
   const documentPrompt = continuedDocument ?? (inferredFormats.length ? `${prompt}\nXuất tệp ${inferredFormats.join(", ")} theo yêu cầu gần nhất.` : prompt);
   const rememberedContext=user.memoryEnabled?await retrieveDocumentMemory(user.id,prompt):{context:"",files:[] as ChatAttachment[]};
-  const rememberedFileTask=documentOutput||isDocumentEditFollowup(prompt,true)||needsComputation(prompt,true);
+  const rememberedFileTask=documentOutput||Boolean(spreadsheetOperation(prompt))||isDocumentEditFollowup(prompt,true)||needsComputation(prompt,true);
   const catalog = [...await documentCatalog(conversation.id),...(rememberedFileTask?rememberedContext.files:[])];
   const spreadsheetRetry = isSpreadsheetRetry(prompt);
   const priorSpreadsheetPrompt = spreadsheetRetry
@@ -350,9 +351,12 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   const wordEditSource = wordFieldEdit && !namedDocuments(catalog,prompt).length && latestWordOutputs.length===1 ? latestWordOutputs[0] : undefined;
   const revisionSources = continuedDocument && latestWordOutputs.length===1 && !namedDocuments(catalog,prompt).length
     ? revisionDocumentSources(latestWordOutputs,catalog) : [];
+  const recentSpreadsheets=history.findLast(message=>message.attachments.some(isSpreadsheet))?.attachments??[];
+  const latestFiles=history.findLast(message=>message.attachments.length>0)?.attachments??[];
+  const spreadsheetSources=spreadsheetRequest ? spreadsheetRevisionSources(catalog,selectionPrompt,recentSpreadsheets,latestFiles) : null;
   const selectedFiles = attachmentData.length
     ? [...inputAttachments,...selectDocuments(namedDocuments(catalog.filter(file=>!inputAttachments.some(input=>input.url===file.url)),prompt),prompt)]
-    : wordEditSource ? [wordEditSource] : revisionSources.length ? revisionSources : referencesFiles ? selectDocuments(selectionCatalog,selectionPrompt,latestUpload) : [];
+    : wordEditSource ? [wordEditSource] : spreadsheetSources?.length ? spreadsheetSources : revisionSources.length ? revisionSources : referencesFiles ? selectDocuments(selectionCatalog,selectionPrompt,latestUpload) : [];
   const shouldReuseFiles = attachmentData.length === 0 && selectedFiles.length > 0;
   const restoredAttachmentData = shouldReuseFiles
     ? (await Promise.all(selectedFiles.slice(0, 10).map(loadStoredAttachment))).filter((item): item is NonNullable<typeof item> => Boolean(item))

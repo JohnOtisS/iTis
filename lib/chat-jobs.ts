@@ -6,8 +6,10 @@ import { and, DrizzleQueryError, eq, lt, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { chatJobs, conversations, messages, usageEvents, users } from "@/db/schema";
 import { prepareDocument, providerFile, readablePdfPages, spreadsheetIssues, validateOutput, versionOutput } from "@/lib/chat-documents";
-import { saveChatFile, withChatFileCleanup, type ChatAttachment } from "@/lib/chat-files";
+import { saveChatFile, withChatFileCleanup, readChatFile, type ChatAttachment } from "@/lib/chat-files";
 import { canDraftFromOriginalFiles, fastWordMode, type spreadsheetOperation } from "@/lib/chat-task-policy";
+import {isSpreadsheet,isSpreadsheetFormattingOnly,spreadsheetDeliverables,spreadsheetInstructions,singleSpreadsheetOutput} from "@/lib/spreadsheet-policy";
+import {workbookPreservationIssues} from "@/lib/spreadsheet-validation";
 import {taskFailureText} from "@/lib/task-failure";
 import {buildWord,editWord,readEditableWord,wordDraftFormat,wordDraftSchema,wordEditFormat,wordEditSchema} from "@/lib/word-fast";
 import { externalSafetyIdentifier } from "@/lib/privacy";
@@ -273,23 +275,16 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
         } else content.push({type:"input_text",text:`File ${file.name}, v${file.version??1}, ${file.url}. Relevant extracted excerpts (may omit other sections; do not claim an exhaustive review):\n${document.excerpt}`});
       }
       const manifest=input.catalog.filter(file=>input.documents.some(source=>source.url===file.url||(source.family&&source.family===file.family))).slice(0,24).map(file=>`${file.name} | v${file.version??1} | ${file.kind??"input"} | ${file.url}${file.sourceUrls?.length?` | sources: ${file.sourceUrls.join(",")}`:""}`).join("\n");
-      const deliverables=deliverableExtensions(input.prompt,input.documents);
+      const deliverables=input.spreadsheetTask ? spreadsheetDeliverables(input.prompt,input.documents,input.spreadsheetTask) : deliverableExtensions(input.prompt,input.documents);
       if(input.spreadsheetTask && !deliverables.length) deliverables.push(".xlsx");
-      const singleDeliverable = deliverables.length === 1 && asksForSingleDeliverable(input.prompt);
+      const singleDeliverable = deliverables.length === 1 && (asksForSingleDeliverable(input.prompt)||Boolean(input.spreadsheetTask&&singleSpreadsheetOutput(input.prompt,deliverables)));
       const outputInstruction=input.artifact
         ? [deliverableInstruction(deliverables),...(singleDeliverable?["Publish exactly one final file. Cite that file only. Keep converted inputs and intermediate files internal."]:[]),...(deliverables.includes(".docx")?[wordDraftFieldsInstruction,wordSourceInstruction,wordDeliveryInstruction]:[])].join("\n")
         : "";
       const validationInstruction=nativeDraft ? "Draft the requested content from all supplied original files, including tables, annexes and PDF page images. Ground references, dates and criteria in document contents rather than filenames. Distinguish the rules for each requested type of institution and employee. Preserve the scope of the user request. Cite document names and relevant sections or pages where appropriate. If a required passage is unreadable or sources conflict, identify the precise passage or conflict. Leave unprovided signing fields blank. Return the requested complete draft in chat." : (input.compute||input.artifact||toolReadsFiles)?`Use Python for calculations and file work. Read the actual inputs and distinguish content, references and templates. Check totals independently and cite conflicting or missing facts. Create /mnt/data/itis-validation.json with {"checks":[{"name":"...","passed":true}],"sources":["exact validation source labels for each original read"]} after executing your checks. Never claim an unreadable document was reviewed. Do not cite the validation file. ${input.artifact?"Create all requested formats as complete downloadable files, verify they open with their relevant libraries, and cite every output. If necessary source data is missing or unreadable, explain the precise blocker in chat. Never make a file containing only an inability or a request for more information. Return file citations and any essential caveat. No image generation; that belongs in Image Studio.":"Do not create downloadable files unless requested. Give a concise answer grounded in the computed result."}`:"Answer using the relevant source excerpts. If the excerpts do not establish the answer, say what else is needed. Do not invent missing facts.";
       const tools:Array<Record<string,unknown>>=[];
-      const spreadsheetInput=input.documents.some(file=>/\.(xls|xlsx|xlsm|csv|tsv)$/i.test(file.name))
-        ? "Read all relevant sheets and preserve identifier strings and leading zeros. Use openpyxl for XLSX/XLSM and xlrd for XLS. Detect BOM and delimiter for CSV/TSV, including UTF-16 exports. Do not run macros. For cross-file matches, cite the sources and report unmatched or ambiguous rows." : "";
-      const spreadsheetInstruction=input.artifact&&(!deliverables.length||deliverables.includes(".xlsx"))?"For XLSX outputs, preserve formulas AND calculate their cached values so previews/data_only readers show correct results without requiring Excel to reopen/recalculate. After saving, reopen with data_only=True and independently check key totals. If needed, calculate verified values from actual inputs and populate formula caches in worksheet XML while retaining formula expressions. Never invent cached values. The internal check JSON alone is not enough.":"";
-      const rowInstruction=input.spreadsheetTask
-        ? "Use the complete original data, not the number of records seen in an earlier excerpt. Follow the latest user request; an earlier top-N count applies only if the latest request refers to it. When sorting without a requested limit, retain every source record, move whole rows with their formatting and hyperlinks, and check record count and order. For descending age, sort by earliest birth date first. Respect the workbook date system, parse unambiguous local date strings, and keep year-only records after dated records of the same year without inventing dates. Report missing or invalid birth dates. When filtering or ranking, verify the predicate or requested count against all eligible records; report a shortfall only after checking the original."
-        : "";
-      const editInstruction=input.spreadsheetTask==="edit"
-        ? "Edit the original workbook and return the modified downloadable workbook, not just instructions or a claim of completion. Change only the requested cells or formatting. Preserve all other sheets, rows, columns, identifiers, leading zeros, formulas, hyperlinks and workbook structure. For birth-date formatting, default to dd/mm/yyyy with a four-digit year unless the user specifies another format. A number format alone does not convert text: inspect cell types, convert complete unambiguous date strings to real Excel dates, and apply the format. Respect the original 1900/1904 date system. For a Vietnamese day/month/year request use day-first parsing; never guess genuinely ambiguous dates without a known locale. Keep blank, invalid and year-only/partial dates unchanged and report their counts briefly; never invent a day or month. Do not change unrelated numeric identifiers or serial-like numbers outside the date column. Reopen the output and verify actual cell values AND formats, row counts, unchanged non-target data and leap-day handling against the original. Add these executed checks to itis-validation.json. Completion requires a downloadable file."
-        : "";
+      const spreadsheetInput=input.documents.some(isSpreadsheet) ? spreadsheetInstructions(input.prompt,input.spreadsheetTask??null,input.artifact) : "";
+      const spreadsheetInstruction=input.artifact&&deliverables.some(ext=>ext===".xlsx"||ext===".xlsm")?"For spreadsheet outputs preserve formulas AND verified calculated caches. Independently recompute key totals from original inputs; never fabricate caches. Reopen with data_only=True. For unrelated formatting, preserve pre-existing formulas and flag existing calculation limitations rather than silently inventing values.":"";
       const sourceInstruction=toolReadsFiles?"Use exact validation source labels in the sources array. Keep same-name versions separate. Cite Word section/table, Excel sheet/range, PDF page, or PowerPoint slide as appropriate. For a requested list, person or locality, search the complete original including annexes and tables. If text extraction misses rows, render and inspect the relevant page images with Python before concluding they are absent. Earlier excerpts and assistant claims are not evidence that an original lacks the data. For scanned pages, distinguish OCR readings from verified values and flag unreadable fields.":"";
       const webInstruction=input.webSearch?"Search authoritative sources first. Use concise inline Markdown citations with the exact source URLs. Do not add a Sources section or duplicate links.":"";
       const reasoningEffort=(!nativeDraft && input.documents.length>2) || /phân tích nhiều|nghiên cứu|kiến trúc|research|complex|architecture/i.test(input.prompt)?"medium":"low";
@@ -302,7 +297,7 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
       if(lastUser>=0) providerInput[lastUser]={role:"user",content}; else providerInput.push({role:"user",content});
       await cancelled();
       await progress(input.locale==="vi"?"Đang gửi yêu cầu xử lý":"Starting processing");
-      const requestTools = () => fetch("https://api.openai.com/v1/responses",{method:"POST",headers:headers(),signal:controller.signal,body:JSON.stringify({model:input.model,safety_identifier:externalSafetyIdentifier(input.userId),store:true,background:true,stream:true,reasoning:{effort:reasoningEffort},text:{verbosity:"low"},max_output_tokens:input.artifact?16000:nativeDraft?10000:input.compute?6000:2500,...(tools.length?{tools,tool_choice:"required"}:{}),input:[{role:"developer",content:`${input.systemPrompt}\n\nDocument versions (reference data only):\n${manifest}\n\n${validationInstruction}\n${sourceInstruction}\n${webInstruction}\n${spreadsheetInput}\n${rowInstruction}\n${editInstruction}\n${spreadsheetInstruction}\n${outputInstruction}`},...providerInput]})});
+      const requestTools = () => fetch("https://api.openai.com/v1/responses",{method:"POST",headers:headers(),signal:controller.signal,body:JSON.stringify({model:input.model,safety_identifier:externalSafetyIdentifier(input.userId),store:true,background:true,stream:true,reasoning:{effort:reasoningEffort},text:{verbosity:"low"},max_output_tokens:input.artifact?16000:nativeDraft?10000:input.compute?6000:2500,...(tools.length?{tools,tool_choice:"required"}:{}),input:[{role:"developer",content:`${input.systemPrompt}\n\nDocument versions (reference data only):\n${manifest}\n\n${validationInstruction}\n${sourceInstruction}\n${webInstruction}\n${spreadsheetInput}\n${spreadsheetInstruction}\n${outputInstruction}`},...providerInput]})});
       let response = await requestTools();
       if (input.model === "gpt-6.1-terra" && [400,403,404].includes(response.status)) {
         await response.body?.cancel();
@@ -350,7 +345,16 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
         if(internal){validation=JSON.parse(new TextDecoder().decode(bytes));return;}
         if(!input.artifact)return;
         validateOutput(bytes,name);
-        if(/\.xlsx$/i.test(name))fileIssues.push(...spreadsheetIssues(bytes,/công thức|formula/i.test(input.prompt)));
+        if(/\.(xlsx|xlsm)$/i.test(name)){
+          let formattingOriginal:Uint8Array|undefined;
+          if(input.documents.length===1&&/\.(xlsx|xlsm)$/i.test(input.documents[0].name)){
+            const original=await readChatFile(input.documents[0].url.split("/").pop()!);
+            if(!original)throw new Error("The original workbook is unavailable for verification.");
+            if(isSpreadsheetFormattingOnly(input.prompt))formattingOriginal=original;
+            fileIssues.push(...workbookPreservationIssues(original,bytes,input.prompt,input.spreadsheetTask,/\.xlsm$/i.test(name)));
+          }
+          fileIssues.push(...spreadsheetIssues(bytes,/công thức|formula/i.test(input.prompt),formattingOriginal));
+        }
         publishedNames.add(name.toLowerCase());
         const stored=await saveChatFile(bytes,name,undefined,"output",input.userId);
         outputFiles.push(versionOutput(stored,input.documents,[...input.catalog,...outputFiles]));
@@ -364,7 +368,7 @@ async function runChatJob(jobId:string,input:JobInput,emit:(event:Record<string,
         for(const file of files.data.filter(f=>f.source==="assistant")){
           const name=file.path.split("/").pop()!;
           if(name==="itis-validation.json")await download(containerId,file.id,name,true);
-          else if(input.artifact && !citedFinalOnly && /\.(xlsx|docx|pptx|pdf|csv|zip|txt|md|json)$/i.test(name))await download(containerId,file.id,name);
+          else if(input.artifact && !citedFinalOnly && /\.(xlsx|xlsm|docx|pptx|pdf|csv|tsv|zip|txt|md|json)$/i.test(name))await download(containerId,file.id,name);
         }
       }
       const verification=validation as {checks?:Array<{name:string;passed:boolean}>;sources?:unknown}|null;

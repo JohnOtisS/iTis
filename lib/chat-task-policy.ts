@@ -25,26 +25,12 @@ export function canDraftFromOriginalFiles(prompt: string, documents: Array<{name
     && !needsComputation(prompt,true)
     && /\b(?:soan|viet|tong hop|tom tat|draft|write|synthesi[sz]e|summari[sz]e)\b/.test(text);
 }
-export function spreadsheetOperation(prompt: string) {
-  const text = documentRequestText(prompt);
-  if (/^\s*(?:(?:hay|vui long|please)\s+)?(?:cach|huong dan|lam sao|how (?:to|do|can)|explain how)\b/.test(text)) return null;
-  if (/\b(?:dinh dang|chuan hoa|format|reformat|normalize)\b/.test(text)
-    && !/\b(?:dinh dang (?:gi|nao)|format (?:is|does)|what (?:is|format))\b/.test(text)) return "edit";
-  if (/\b(?:sap (?:xep|theo|thu tu)|xep (?:theo|lai|tu|danh sach|tuoi)|sort(?:ing)?|reorder|tang dan|giam dan|ascending|descending|tu (?:cao|thap) (?:xuong|len))\b/.test(text)) return "sort";
-  if (/\b(?:loc|filter(?:ing)?|khu trung|(?:bo|xoa|loai bo) (?:dong )?trung|deduplicat(?:e|ion))\b/.test(text)) return "filter";
-  if (/\b(?:sua|chinh sua|thay doi|doi|thay the|cap nhat|dien|them|chen|xoa|edit|modify|replace|update|insert|delete)\b[^.!?\n]{0,90}\b(?:ngay|thang|nam sinh|cot|dong|o|sheet|cong thuc|du lieu|gia tri|ten|date|birth|column|row|cell|formula|value|header|sheet)\b/.test(text)) return "edit";
-  if (/\b(?:phan tich|du lieu|xep hang|thong ke|nhom theo|dem|bao nhieu|top|cao tuoi nhat|tre tuoi nhat|lon nhat|nho nhat|analy[sz]\w*|data|rank\w*|count|group by|oldest|youngest|highest|lowest)\b/.test(text)) return "read";
-  return null;
-}
+export {spreadsheetOperation,wantsSpreadsheetFile} from "@/lib/spreadsheet-policy";
 
 export function isSpreadsheetRetry(prompt: string) {
   return /^(?:(?:hay|vui long|please)\s+)?(?:lam lai|thu lai|chay lai|retry|try again|redo)(?:\s+(?:cho toi|giup toi|nhe|di|please|it))*[.!?]*$/.test(documentRequestText(prompt).trim());
 }
 
-export function wantsSpreadsheetFile(prompt: string, operation: ReturnType<typeof spreadsheetOperation>) {
-  if (operation !== "sort" && operation !== "filter" && operation !== "edit") return false;
-  return !/\b(?:chi (?:can )?(?:liet ke|tra loi|hien thi)|tra loi trong chat|cho (?:toi )?biet|khong (?:can )?(?:xuat|tao) (?:them )?(?:file|tep|excel|xlsx|csv)|(?:answer|show|list) (?:only )?in chat|(?:no|without|do not create) (?:an? )?(?:file|spreadsheet))\b/.test(documentRequestText(prompt));
-}
 export function chatResponseTokenLimit(prompt: string, history: Array<{role:string;content:string}>, model:string) {
   const drafting = /\b(?:soan|viet|tao|write|draft|create)\b.{0,100}\b(?:de thi|de kiem tra|bai kiem tra|giao an|bao cao|ke hoach|exam|test paper|lesson plan|report|proposal)\b/;
   const text = documentRequestText(prompt);
@@ -55,8 +41,8 @@ export function chatResponseTokenLimit(prompt: string, history: Array<{role:stri
 export function needsDocumentOutput(prompt: string) {
   prompt = affirmativeDocumentRequest(prompt);
   if (deliveryPhrase(prompt)) return true;
-  return /\b(chuyen|convert|xuat|export|render|tao|lap|lam|sua|chinh|cap nhat|modify|edit|generate|create|make)\b.{0,70}\b(file|tep|pdf|word|docx|excel|xlsx|csv|powerpoint|pptx|bao cao|report)\b/.test(prompt)
-    || /\b(?:cho (?:toi|minh|em|anh)|send me|give me)\s+(?:mot\s+|an?\s+|the\s+)?(?:file|tep)\s+(?:pdf|word|docx|excel|xlsx|csv|powerpoint|pptx)\b/.test(prompt);
+  return /\b(chuyen|convert|xuat|export|render|tao|lap|lam|sua|chinh|cap nhat|modify|edit|generate|create|make)\b.{0,70}\b(file|tep|pdf|word|docx|excel|xlsx|xlsm|csv|tsv|powerpoint|pptx|bao cao|report)\b/.test(prompt)
+    || /\b(?:cho (?:toi|minh|em|anh)|send me|give me)\s+(?:mot\s+|an?\s+|the\s+)?(?:file|tep)\s+(?:pdf|word|docx|excel|xlsx|xlsm|csv|tsv|powerpoint|pptx)\b/.test(prompt);
 }
 function deliveryPhrase(text: string) {
   if (/^\s*(?:(?:hay|ban|please)\s+)*(?:cach|huong dan|lam sao|how (?:to|do|can))\b/.test(text)) return false;
