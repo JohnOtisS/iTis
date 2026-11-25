@@ -3,13 +3,13 @@ import type {ChatAttachment} from "@/lib/chat-files";
 
 export const isSpreadsheet = (file: {name:string}) => /\.(xlsx|xlsm|xls|csv|tsv)$/i.test(file.name);
 export function isSpreadsheetFormattingOnly(prompt:string) {
-  const text=documentRequestText(prompt);
+  const text=documentRequestText(prompt).replace(/\bchuyen sau\b/g,"in depth");
   return /\b(?:dinh dang|format|reformat|can le|to mau|ke vien|wrap text|freeze panes?|autofit)\b/.test(text)
     && !/\b(?:sua|thay|tinh|them|xoa|doi|replace|calculate|insert|delete|add|remove|cong thuc moi|new formula)\b/.test(text);
 }
 
 export function spreadsheetOperation(prompt:string) {
-  const text=documentRequestText(prompt);
+  const text=documentRequestText(prompt).replace(/\bchuyen sau\b/g,"in depth");
   if (/^\s*(?:(?:bro|ban|hay|vui long|please)\s+)*(?:cach|huong dan|lam sao|how (?:to|do|can)|explain how)\b/.test(text)) return null;
   // Preserve negative constraints without mistaking them for requested edits.
   if (/\b(?:la gi|nghia la gi)\s*[?.!]*$|^\s*(?:what is|explain)\b/.test(text)) return null;
@@ -31,7 +31,7 @@ export function spreadsheetOperation(prompt:string) {
 export function wantsSpreadsheetFile(prompt:string,operation:ReturnType<typeof spreadsheetOperation>) {
   if(!operation || operation==="read")return false;
   const text=documentRequestText(prompt);
-  return !/\b(?:chi (?:can )?(?:liet ke|tra loi|hien thi)|tra loi trong chat|khong (?:can )?(?:xuat|tao|gui) (?:them )?(?:file|tep|excel|xlsx|csv)|(?:answer|show|list) (?:only )?in chat|(?:no|without|do not create) (?:an? |any )?(?:file|spreadsheet))\b/.test(text);
+  return !/\b(?:chi (?:can )?(?:phan tich|liet ke|tra loi|hien thi)|analysis only|tra loi trong chat|khong (?:can )?(?:sua|xuat|tao|gui) (?:them )?(?:file|tep|excel|xlsx|csv)|(?:answer|show|list) (?:only )?in chat|(?:no|without|do not create) (?:an? |any )?(?:file|spreadsheet))\b/.test(text);
 }
 
 export function spreadsheetDeliverables(prompt:string,documents:ChatAttachment[],operation:ReturnType<typeof spreadsheetOperation>) {

@@ -11,6 +11,9 @@ assert.equal(fastWordMode("Hoàn thiện rồi xuất PDF",[{name:"source.docx"}
 assert.equal(fastWordMode("Viết lại và hoàn thiện toàn văn",[{name:"source.docx"}],false,false),null);
 assert.equal(needsFullDocumentReview("Phân tích kỹ, chuyên sâu tài liệu",1),true);
 assert.equal(needsDocumentOutput("Chỉ phân tích chuyên sâu, không sửa file và không tạo file"),false);
+assert.equal(needsDocumentOutput("Chỉ phân tích chuyên sâu nội dung cả ba mục và bảng trong file, chỉ rõ phần còn thiếu và cách bổ sung. Không sửa file và không tạo file."),false);
+assert.equal(needsDocumentOutput("Phân tích chuyên sâu file Word"),false);
+assert.equal(needsDocumentOutput("Phân tích chuyên sâu rồi xuất Word"),true);
 assert.equal(isDocumentEditFollowup("Chỉ phân tích chuyên sâu, không sửa file và không tạo file",true),false);
 
 const bytes=buildWord({filename:"form.docx",title:"BẢN KIỂM ĐIỂM",summary:"",blocks:[

@@ -21,6 +21,8 @@ assert.match(spreadsheetInstructions("Tính tuổi hôm nay","read",false,"2026-
 assert.equal(needsWebSearch("Tính tuổi hôm nay từ ngày sinh trong Excel"),false);
 assert.equal(needsWebSearch("Calculate age today from birth dates"),false);
 assert.equal(needsWebSearch("Tính tuổi hôm nay và tra cứu web quy định"),true);
+assert.equal(spreadsheetOperation("Phân tích chuyên sâu file Excel"),"read");
+assert.equal(wantsSpreadsheetFile("Chỉ phân tích chuyên sâu và gợi ý cách bổ sung, không sửa file","edit"),false);
 for(const prompt of ["Tính tổng doanh thu cho tôi biết","Đối chiếu hai bảng và báo chênh lệch","Có bao nhiêu người đủ 16 tuổi?","Calculate the total amount","Đếm số người, không xóa dòng"]){assert.equal(spreadsheetOperation(prompt),"read",prompt);assert(!wantsSpreadsheetFile(prompt,"read"));}
 for(const prompt of ["Hướng dẫn thêm cột Excel","How do I format dates?","bro hướng dẫn tính tổng","Định dạng ngày sinh là định dạng gì?"]){assert.notEqual(spreadsheetOperation(prompt),"edit",prompt);}
 assert(wantsSpreadsheetFile("Thêm cột tuổi rồi cho tôi biết bao nhiêu ô lỗi","edit"));

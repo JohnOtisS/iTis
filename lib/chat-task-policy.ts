@@ -42,7 +42,7 @@ export function chatResponseTokenLimit(prompt: string, history: Array<{role:stri
   return longDraft ? 6000 : model === "gpt-6.1-sol" ? 2500 : 1000;
 }
 export function needsDocumentOutput(prompt: string) {
-  prompt = affirmativeDocumentRequest(prompt);
+  prompt = affirmativeDocumentRequest(prompt).replace(/\bchuyen sau\b/g,"in depth");
   if (deliveryPhrase(prompt)) return true;
   return /\b(chuyen|convert|xuat|export|render|tao|lap|lam|sua|chinh|cap nhat|modify|edit|generate|create|make)\b.{0,70}\b(file|tep|pdf|word|docx|excel|xlsx|xlsm|csv|tsv|powerpoint|pptx|bao cao|report)\b/.test(prompt)
     || /\b(?:cho (?:toi|minh|em|anh)|send me|give me)\s+(?:mot\s+|an?\s+|the\s+)?(?:file|tep)\s+(?:pdf|word|docx|excel|xlsx|xlsm|csv|tsv|powerpoint|pptx)\b/.test(prompt);
