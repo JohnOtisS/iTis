@@ -1,4 +1,5 @@
 import {affirmativeDocumentRequest,deliveryTarget,documentRequestText,outputExtensions} from "@/lib/document-request";
+import {wordCompletionRequest,completionOutputRequested} from "@/lib/word-completion";
 
 export function needsWebSearch(prompt: string) {
   const text = documentRequestText(prompt).replace(/`[^`]*`|"[^"]*"|“[^”]*”/g, " ");
@@ -63,7 +64,7 @@ export function downloadFormatFromContext(prompt: string, previousUserRequests: 
 export function isDocumentTaskFollowup(prompt: string) {
   const text = documentRequestText(prompt).trim();
   if (/\b(?:khong (?:can )?(?:xuat|tao)|chi tra loi|chi phan tich|do not create|answer only)\b/.test(text)) return false;
-  return /^(?:(?:ban|hay|vui long|please)\s+)*(?:lam lai|thu lai|tiep tuc|lam tiep|sua lai|chinh lai|dien(?: them| day du)?|bo sung|cap nhat|retry|try again|continue|redo|update)\b/.test(text)
+  return /^(?:(?:ban|hay|vui long|please)\s+)*(?:lam lai|thu lai|tiep tuc|lam tiep|sua lai|chinh lai|dien(?: them| day du)?|bo sung|cap nhat|hoan thien|hoan chinh|viet tiep|complete|finish|retry|try again|continue|redo|update)\b/.test(text)
     || /^(?:ten (?:ubnd|co quan)|ubnd (?:phuong|xa)|nguoi ky|co quan ban hanh)\b/.test(text);
 }
 
@@ -88,7 +89,9 @@ export function isImageGeneration(prompt: string) {
   return /(?:tạo|vẽ|render|generate|draw|create).{0,25}(?:hình ảnh|bức ảnh|bức tranh|chân dung|image|portrait|picture|illustration)/i.test(prompt)
     && !/pdf|docx|pptx|xlsx|slide|chart|biểu đồ|tài liệu/i.test(prompt);
 }
-export function fastWordMode(prompt:string,documents:Array<{name:string}>,compute:boolean,web:boolean):"create"|"edit"|null {
+export function fastWordMode(prompt:string,documents:Array<{name:string}>,compute:boolean,web:boolean):"create"|"edit"|"complete"|null {
+  if(!compute&&!web&&documents.length===1&&/\.docx$/i.test(documents[0].name)&&wordCompletionRequest(prompt)&&completionOutputRequested(prompt)
+    && !/\b(?:chinh sua|sua loi|bien tap|viet lai|rewrite|delete|remove|rut gon|thay the)\b/.test(documentRequestText(prompt)))return "complete";
   const formats=requestedExtensions(prompt);
   const textEdit = isWordFieldEdit(prompt) || /thay|đổi|replace|change|sửa lỗi|chính tả/i.test(prompt);
   if(!formats.length && documents.length===1 && /\.docx$/i.test(documents[0].name) && textEdit)formats.push(".docx");
@@ -108,5 +111,6 @@ export function isTerraWordCandidate(prompt: string, documents: Array<{name:stri
     && !/\b(?:chuyen(?: doi)?|convert)\b/.test(text);
 }
 export function isDocumentEditFollowup(prompt:string,hasDocuments:boolean){
+  if(/\b(?:chi (?:can )?(?:phan tich|nhan xet|gop y|tra loi)|khong (?:can )?(?:sua|chinh sua|chinh|cap nhat) (?:file|tep|word)|analysis only|do not edit|answer only in chat)\b/.test(documentRequestText(prompt)))return false;
   return hasDocuments && (/(?:sửa|chỉnh sửa|cập nhật|thay|đổi).{0,40}(?:file|tệp|tài liệu|tên|vị trí|nội dung|tiêu đề|lương|số lượng|đơn giá)|\b(edit|modify|update|replace)\b/i.test(prompt) || /^(?:hãy\s+)?(?:đổi|thay)\s+.{1,80}\s+(?:thành|sang|bằng)/i.test(prompt));
 }

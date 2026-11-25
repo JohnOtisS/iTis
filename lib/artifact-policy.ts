@@ -35,8 +35,8 @@ export function isReusableWordDraft(content: string, previousRequest: string) {
   if (content.length < 160 || isBlockedArtifactSource(content)) return false;
   const text = normalizedReference(content);
   const request = normalizedReference(previousRequest);
-  const documentSubject = /\b(?:cong van|bien ban|ke hoach|bao cao|de kiem tra|hop dong|thong bao|to trinh|job description|meeting minutes|letter|report|proposal)\b/;
-  const drafting = /\b(?:soan|viet|lap|du thao|tao|draft|write|prepare|create)\b/;
+  const documentSubject = /\b(?:cong van|bien ban|ke hoach|bao cao|kiem diem|tu danh gia|de kiem tra|hop dong|thong bao|to trinh|job description|meeting minutes|letter|report|proposal)\b/;
+  const drafting = /\b(?:soan|viet|lap|du thao|tao|hoan thien|hoan chinh|draft|write|prepare|create|complete|finish)\b/;
   const officialHeader = /^\s*[*#_ ]*(?:cong hoa xa hoi chu nghia viet nam|uy ban nhan dan)\b/m.test(documentRequestText(content));
   const addresseeOrRecipients = /^\s*[*#_ ]*(?:kinh gui|noi nhan)\b/m.test(documentRequestText(content));
   return (officialHeader && addresseeOrRecipients)

@@ -25,7 +25,7 @@ export function outputExtensions(prompt:string){
 }
 export function affirmativeDocumentRequest(prompt:string){
   return documentRequestText(prompt)
-    .replace(/\b(?:khong(?: (?:can|kem|gui|dinh kem))?|no|without|do not|don't)\s+(?:(?:xuat|tao|render|export|create|generate)\s+)?(?:(?:file|tep|ban|any)\s+)*(?:word|docx|pdf|excel|xlsx|xlsm|csv|tsv|powerpoint|pptx|txt|text|markdown|files?|tep)\b(?:\s+(?:va|hay|hoac|or|and)\s+(?:word|docx|pdf|excel|xlsx|xlsm|csv|tsv|powerpoint|pptx|txt|text|markdown)\b)*/g,"")
+    .replace(/\b(?:khong(?: (?:can|kem|gui|dinh kem))?|no|without|do not|don't)\s+(?:(?:xuat|tao|chinh sua|sua|chinh|cap nhat|edit|modify|update|render|export|create|generate)\s+)?(?:(?:file|tep|ban|any)\s+)*(?:word|docx|pdf|excel|xlsx|xlsm|csv|tsv|powerpoint|pptx|txt|text|markdown|files?|tep)\b(?:\s+(?:va|hay|hoac|or|and)\s+(?:word|docx|pdf|excel|xlsx|xlsm|csv|tsv|powerpoint|pptx|txt|text|markdown)\b)*/g,"")
     .replace(/(?:khong[^.!?\n]*(?:tai lai|upload|attach|dinh kem)[^.!?\n]*)/g,"");
 }
 export function deliverableExtensions(prompt:string,documents:Array<{name:string}>=[]){
@@ -60,6 +60,7 @@ export function needsFullDocumentReview(prompt:string,count:number){
   if(count===0)return false;
   const text=documentRequestText(prompt);
   return /toan bo|tat ca|day du|full review|(?:every|all) (?:rows?|sheets?|pages?|slides?|sections?)|exhaustive/.test(text)
+    || /\b(?:chuyen sau|chi tiet|toan dien|phan tich ky|deep analysis|in[ -]depth|comprehensive)\b/.test(text)
     || /\b(?:danh sach|nhan su|can bo|ho ten|roster|personnel|named individuals)\b/.test(text)
     || /\b(?:(?:trang|page|slide)\s+\d+|header|footer|dau trang|chan trang|footnotes?|chu thich cuoi trang|speaker notes|ghi chu thuyet trinh|bo cuc|layout|pdf quet|scanned|ocr)\b/.test(text)
     || count>1&&/phan tich|doi chieu|so sanh|tong hop|\bloc\b|trung khop|analy[sz]|compare|reconcile|synthesi[sz]|\bfilter\b/.test(text);

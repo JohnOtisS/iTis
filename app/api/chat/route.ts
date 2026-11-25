@@ -22,6 +22,7 @@ import { buildChatContext } from "@/lib/chat-context";
 import { documentCatalog, namedDocuments, revisionDocumentSources, selectDocuments } from "@/lib/chat-documents";
 import { chatResponseTokenLimit, documentTaskFromContext, downloadFormatFromContext, fastWordMode, isDocumentDeliveryFollowup, isDocumentTaskFollowup, isDocumentEditFollowup, isImageGeneration, isSpreadsheetRetry, isWordFieldEdit, needsComputation, needsDocumentOutput, needsWebSearch, spreadsheetOperation, isTerraWordCandidate, wantsSpreadsheetFile } from "@/lib/chat-task-policy";
 import {isSpreadsheet,spreadsheetRevisionSources} from "@/lib/spreadsheet-policy";
+import {wordCompletionRequest,wordCompletionSource} from "@/lib/word-completion";
 import { startChatJob } from "@/lib/chat-jobs";
 import { assertContinuationBudget } from "@/lib/token-budget";
 
@@ -327,7 +328,8 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
     sourceMessageId=source?.id??null;
   }
   const explicitOutput = needsDocumentOutput(prompt);
-  const context = await buildChatContext(conversation.id,prompt,maxContextTokens,{compact:explicitOutput||attachments.length>0||needsComputation(prompt,true),documentFollowup:isDocumentDeliveryFollowup(prompt)||isDocumentTaskFollowup(prompt)});
+  const completingDocument=wordCompletionRequest(prompt);
+  const context = await buildChatContext(conversation.id,prompt,maxContextTokens,{compact:explicitOutput||attachments.length>0||needsComputation(prompt,true),documentFollowup:completingDocument||isDocumentDeliveryFollowup(prompt)||isDocumentTaskFollowup(prompt)});
   const history = context.history.filter(item => item.role === "user" || item.role === "assistant");
   const priorUserRequests = context.taskRequests.slice(0,-1);
   const inferredFormats = downloadFormatFromContext(prompt,priorUserRequests);
@@ -335,14 +337,14 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   const documentOutput = explicitOutput || inferredFormats.length>0 || Boolean(continuedDocument);
   const documentPrompt = continuedDocument ?? (inferredFormats.length ? `${prompt}\nXuất tệp ${inferredFormats.join(", ")} theo yêu cầu gần nhất.` : prompt);
   const rememberedContext=user.memoryEnabled?await retrieveDocumentMemory(user.id,prompt):{context:"",files:[] as ChatAttachment[]};
-  const rememberedFileTask=documentOutput||Boolean(spreadsheetOperation(prompt))||isDocumentEditFollowup(prompt,true)||needsComputation(prompt,true);
+  const rememberedFileTask=documentOutput||completingDocument||Boolean(spreadsheetOperation(prompt))||isDocumentEditFollowup(prompt,true)||needsComputation(prompt,true);
   const catalog = [...await documentCatalog(conversation.id),...(rememberedFileTask?rememberedContext.files:[])];
   const spreadsheetRetry = isSpreadsheetRetry(prompt);
   const priorSpreadsheetPrompt = spreadsheetRetry
     ? history.filter(message=>message.role==="user").slice(0,-1).findLast(message=>spreadsheetOperation(message.content) || outputExtensions(message.content).some(extension=>extension===".xlsx" || extension===".csv"))?.content
     : undefined;
   const spreadsheetRequest = spreadsheetOperation(priorSpreadsheetPrompt ?? prompt) ?? (spreadsheetRetry ? "read" : null);
-  const referencesFiles = spreadsheetRequest || documentOutput || needsFullDocumentReview(prompt,catalog.length) || /file|tệp|tài liệu|dữ liệu|bảng|sheet|slide|cột|dòng|đối chiếu|so sánh|tổng|số liệu|excel|pdf|docx|pptx|potx|powerpoint|csv|xlsx|word|document|data|table|row|column|compare|total|continue|tiếp tục|làm tiếp|sửa|chỉnh|đổi|thay/i.test(prompt) || namedDocuments(catalog,prompt).length>0;
+  const referencesFiles = completingDocument || spreadsheetRequest || documentOutput || needsFullDocumentReview(prompt,catalog.length) || /file|tệp|tài liệu|dữ liệu|bảng|sheet|slide|cột|dòng|đối chiếu|so sánh|tổng|số liệu|excel|pdf|docx|pptx|potx|powerpoint|csv|xlsx|word|document|data|table|row|column|compare|total|continue|tiếp tục|làm tiếp|sửa|chỉnh|đổi|thay/i.test(prompt) || namedDocuments(catalog,prompt).length>0;
   const latestUpload = history.findLast(message=>message.role==="user"&&message.attachments.length>0)?.attachments;
   const selectionPrompt = priorSpreadsheetPrompt ?? prompt;
   const selectionCatalog = (spreadsheetRetry || inferredFormats.length>0 || continuedDocument) && latestUpload?.length && !namedDocuments(catalog,selectionPrompt).length ? latestUpload : catalog;
@@ -354,9 +356,11 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
   const recentSpreadsheets=history.findLast(message=>message.attachments.some(isSpreadsheet))?.attachments??[];
   const latestFiles=history.findLast(message=>message.attachments.length>0)?.attachments??[];
   const spreadsheetSources=spreadsheetRequest ? spreadsheetRevisionSources(catalog,selectionPrompt,recentSpreadsheets,latestFiles) : null;
-  const selectedFiles = attachmentData.length
+  const completionSource=wordCompletionSource(prompt,catalog,latestFiles,inputAttachments,namedDocuments(catalog,prompt));
+  let selectedFiles = attachmentData.length
     ? [...inputAttachments,...selectDocuments(namedDocuments(catalog.filter(file=>!inputAttachments.some(input=>input.url===file.url)),prompt),prompt)]
-    : wordEditSource ? [wordEditSource] : spreadsheetSources?.length ? spreadsheetSources : revisionSources.length ? revisionSources : referencesFiles ? selectDocuments(selectionCatalog,selectionPrompt,latestUpload) : [];
+    : completionSource ? [completionSource,...namedDocuments(catalog,prompt).filter(file=>file.url!==completionSource.url)] : wordEditSource ? [wordEditSource] : spreadsheetSources?.length ? spreadsheetSources : revisionSources.length ? revisionSources : referencesFiles ? selectDocuments(selectionCatalog,selectionPrompt,latestUpload) : [];
+  if(completionSource)selectedFiles=[...new Map([completionSource,...selectedFiles].map(file=>[file.url,file])).values()];
   const shouldReuseFiles = attachmentData.length === 0 && selectedFiles.length > 0;
   const restoredAttachmentData = shouldReuseFiles
     ? (await Promise.all(selectedFiles.slice(0, 10).map(loadStoredAttachment))).filter((item): item is NonNullable<typeof item> => Boolean(item))
@@ -394,13 +398,14 @@ async function handleChat(request: Request,state:{memoryNotice?:string}) {
 - Keep Markdown compact; use lists and tables only when they improve readability.`) + (memoryContext ? `\n\n${memoryContext}\n- Never reveal that another user has memories. Treat these memories as belonging only to the signed-in user.` : "");
 
   const spreadsheetTask = selectedFiles.some(file=>/\.(csv|tsv|xlsx|xlsm|xls)$/i.test(file.name)) ? spreadsheetRequest ?? "read" : null;
-  const artifactTask = documentOutput || isDocumentEditFollowup(prompt,selectedFiles.length>0) || (wordFieldEdit && selectedFiles.some(file=>/\.docx$/i.test(file.name))) || wantsSpreadsheetFile(priorSpreadsheetPrompt ?? prompt,spreadsheetTask)
+  const completingWord=completingDocument&&(inputAttachments.some(file=>/\.docx$/i.test(file.name))||latestFiles.some(file=>/\.docx$/i.test(file.name))||Boolean(completionSource));
+  const artifactTask = documentOutput || completingWord || isDocumentEditFollowup(prompt,selectedFiles.length>0) || (wordFieldEdit && selectedFiles.some(file=>/\.docx$/i.test(file.name))) || wantsSpreadsheetFile(priorSpreadsheetPrompt ?? prompt,spreadsheetTask)
     || Boolean(spreadsheetTask && priorSpreadsheetPrompt && needsDocumentOutput(priorSpreadsheetPrompt));
-  const computationTask = Boolean(spreadsheetTask) || needsFullDocumentReview(prompt,selectedFiles.length) || needsComputation(prompt, selectedFiles.length>0);
+  const computationTask = Boolean(spreadsheetTask) || (!(completionSource&&selectedFiles.length===1)&&needsFullDocumentReview(prompt,selectedFiles.length)) || needsComputation(prompt, selectedFiles.length>0);
   const simpleWord=fastWordMode(documentPrompt,selectedFiles,computationTask,webSearchTask);
   if (systemProvider === "openai" && (artifactTask || computationTask || selectedFiles.length>0 || webSearchTask)) {
     const jobPrompt = spreadsheetTask && priorSpreadsheetPrompt ? `${priorSpreadsheetPrompt}\n${documentPrompt}` : documentPrompt;
-    const jobModel = !routerEnabled ? "gpt-6.1-sol" : artifactTask && isTerraWordCandidate(jobPrompt,selectedFiles,computationTask,webSearchTask)
+    const jobModel = !routerEnabled||simpleWord==="complete" ? "gpt-6.1-sol" : artifactTask && isTerraWordCandidate(jobPrompt,selectedFiles,computationTask,webSearchTask)
       ? "gpt-6.1-terra" : !simpleWord && (artifactTask || computationTask || isComplexTask(prompt)) ? "gpt-6.1-sol" : "gpt-6-luna";
     return startChatJob({userId:user.id,conversationId:conversation.id,sourceMessageId,prompt:jobPrompt,systemPrompt:`${systemPrompt}\n\n${context.contextNote}`,history:history.map(({role,content})=>({role,content})),documents:selectedFiles,catalog,artifact:artifactTask,compute:computationTask,spreadsheetTask,webSearch:webSearchTask,model:jobModel,locale:user.locale},Boolean(request.headers.get("accept")?.includes("application/x-ndjson")),request.signal);
   }

@@ -8,6 +8,7 @@ import {buildWord,wordDraftSchema} from "@/lib/word-fast";
 import {contextualWordDelivery,documentKind,isBlockedArtifactSource,isReusableWordDraft,localArtifactIntent,pastedWordExportSource,resolveFileReference} from "@/lib/artifact-policy";
 import {downloadFormatFromContext} from "@/lib/chat-task-policy";
 import {taskUsage} from "@/lib/task-usage";
+import {cleanWordExportBody} from "@/lib/word-completion";
 
 export function markdownWordDraft(content:string) {
   const blocks:Array<{type:"heading"|"paragraph"|"bullet"|"table";text:string;rows:string[][]}>=[];
@@ -135,11 +136,12 @@ async function performLocalArtifactAction(input:LocalInput) {
     }
     if(input.sourceMessageId&&!source?.content.trim())throw new Error("ARTIFACT_SOURCE_NOT_FOUND");
     if(source&&!clarification){
-      const hash=createHash("sha256").update(source.content).digest("hex");
+      const documentBody=format==="docx"?cleanWordExportBody(source.content):source.content;
+      const hash=createHash("sha256").update(documentBody).digest("hex");
       const reused=catalog.find(f=>f.sourceMessageId===source.id&&f.sourceContentHash===hash&&f.name.endsWith("."+format));
       if(reused)files=[reused];
       else{
-        const bytes=format==="docx"?buildWord(markdownWordDraft(source.content),false):new TextEncoder().encode(source.content);
+        const bytes=format==="docx"?buildWord(markdownWordDraft(documentBody),false):new TextEncoder().encode(source.content);
         validateOutput(bytes,"document."+format);
         const title=source.content.split("\n").find(l=>l.trim())?.replace(/^#+\s*/,"").replace(/[^\p{L}\p{N} _-]/gu,"").slice(0,75)||"iTis-document";
         const file=versionOutput(await saveChatFile(bytes,title+"."+format,undefined,"output",input.userId),[],catalog);
