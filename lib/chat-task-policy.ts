@@ -19,6 +19,11 @@ export function needsComputation(prompt: string, hasDocuments = false) {
   return /\b(calculate|reconcile|variance|sum|formula|statistics|forecast|audit)\b|tính (?:tổng|toán|thuế|lãi)|công thức|đối chiếu|chênh lệch|thống kê|dự báo|kiểm toán/i.test(prompt)
     || (hasDocuments && /\b(vat|total|quantity|amount)\b|tổng|số lượng|thành tiền|doanh thu/i.test(prompt));
 }
+export function documentAnalysisRequest(prompt:string){
+  const text=documentRequestText(prompt);
+  return /\b(?:phan tich|nhan xet|danh gia|goi y|analy[sz]e|review|assess)\b/.test(text)
+    && !/\b(?:soan|viet|tong hop|tom tat|draft|write|rewrite|synthesi[sz]e|summari[sz]e)\b/.test(text);
+}
 export function canDraftFromOriginalFiles(prompt: string, documents: Array<{name:string;size?:number}>, artifact: boolean, spreadsheetTask: unknown) {
   const text = documentRequestText(prompt);
   return !artifact && !spreadsheetTask && documents.length>0
@@ -26,7 +31,9 @@ export function canDraftFromOriginalFiles(prompt: string, documents: Array<{name
     && documents.every(file=>typeof file.size==="number" && file.size>0)
     && documents.reduce((sum,file)=>sum+(file.size??0),0)<50*1024*1024
     && !needsComputation(prompt,true)
-    && /\b(?:soan|viet|tong hop|tom tat|draft|write|synthesi[sz]e|summari[sz]e)\b/.test(text);
+    && (/\b(?:soan|viet|tong hop|tom tat|draft|write|synthesi[sz]e|summari[sz]e)\b/.test(text)
+      || (documents.length<=3&&documents.every(file=>/\.(docx|txt|md)$/i.test(file.name)&&(file.size??0)<=2*1024*1024)
+        && /\b(?:phan tich|nhan xet|danh gia|goi y|analy[sz]e|review|assess)\b/.test(text)));
 }
 export {spreadsheetOperation,wantsSpreadsheetFile} from "@/lib/spreadsheet-policy";
 
@@ -91,7 +98,8 @@ export function isImageGeneration(prompt: string) {
 }
 export function fastWordMode(prompt:string,documents:Array<{name:string}>,compute:boolean,web:boolean):"create"|"edit"|"complete"|null {
   if(!compute&&!web&&documents.length===1&&/\.docx$/i.test(documents[0].name)&&wordCompletionRequest(prompt)&&completionOutputRequested(prompt)
-    && !/\b(?:chinh sua|sua loi|bien tap|viet lai|rewrite|delete|remove|rut gon|thay the)\b/.test(documentRequestText(prompt)))return "complete";
+    && !/\b(?:chinh sua|sua loi|bien tap|viet lai|rewrite|delete|remove|rut gon|thay the)\b/.test(documentRequestText(prompt))
+    && !/\b(?:hoan thien|bo sung|doi|tao|them|chen|change|modify|add|insert|create)\s+(?:(?:mot|cac|phan|the|a|new)\s+)?(?:font|can le|bo cuc|header|footer|dau trang|chan trang|bang|dong|cot|table|rows?|columns?)\b/.test(documentRequestText(prompt)))return "complete";
   const formats=requestedExtensions(prompt);
   const textEdit = isWordFieldEdit(prompt) || /thay|đổi|replace|change|sửa lỗi|chính tả/i.test(prompt);
   if(!formats.length && documents.length===1 && /\.docx$/i.test(documents[0].name) && textEdit)formats.push(".docx");

@@ -1,20 +1,35 @@
 import assert from "node:assert/strict";
-import {strFromU8,unzipSync} from "fflate";
+import {strFromU8,strToU8,unzipSync,zipSync} from "fflate";
 import {buildWord,readEditableWord} from "../lib/word-fast";
-import {completeWord,indexedWordParagraphs,wordCompletionRequest,wordCompletionSource,wordCompletionIssues,cleanWordExportBody} from "../lib/word-completion";
-import {fastWordMode,needsDocumentOutput,isDocumentEditFollowup} from "../lib/chat-task-policy";
-import {needsFullDocumentReview} from "../lib/document-request";
+import {completeWord,fullWordAnalysisText,indexedWordParagraphs,wordCompletionRequest,wordCompletionSource,wordCompletionIssues,cleanWordExportBody} from "../lib/word-completion";
+import {canDraftFromOriginalFiles,documentAnalysisRequest,fastWordMode,needsDocumentOutput,isDocumentEditFollowup} from "../lib/chat-task-policy";
+import {needsFullDocumentReview,outputExtensions,sourceFormatText} from "../lib/document-request";
 
 for(const prompt of ["Soạn nội dung: hoàn thiện phần kiểm điểm đang viên sau","Hoàn thiện đầy đủ chuyên sâu bản sau","Bổ sung nội dung vào mục I.1","Viết tiếp phần hạn chế trong mẫu","Complete the attached Word form"]){assert(wordCompletionRequest(prompt),prompt);assert.equal(fastWordMode(prompt,[{name:"source.docx"}],false,false),"complete",prompt);}
 for(const prompt of ["Chỉ phân tích và góp ý, không sửa file","Chỉ viết phần bổ sung trong chat","Hướng dẫn hoàn thiện bản kiểm điểm","Tóm tắt tài liệu"]){assert(!wordCompletionRequest(prompt),prompt);}
 assert.equal(fastWordMode("Hoàn thiện rồi xuất PDF",[{name:"source.docx"}],false,false),null);
 assert.equal(fastWordMode("Viết lại và hoàn thiện toàn văn",[{name:"source.docx"}],false,false),null);
+assert.equal(fastWordMode("Hoàn thiện và thêm một bảng kết quả",[{name:"source.docx"}],false,false),null);
+assert.equal(fastWordMode("Hoàn thiện phần chân trang",[{name:"source.docx"}],false,false),null);
+assert.equal(fastWordMode("Hoàn thiện, giữ nguyên định dạng và footer",[{name:"source.docx"}],false,false),"complete");
 assert.equal(needsFullDocumentReview("Phân tích kỹ, chuyên sâu tài liệu",1),true);
 assert.equal(needsDocumentOutput("Chỉ phân tích chuyên sâu, không sửa file và không tạo file"),false);
 assert.equal(needsDocumentOutput("Chỉ phân tích chuyên sâu nội dung cả ba mục và bảng trong file, chỉ rõ phần còn thiếu và cách bổ sung. Không sửa file và không tạo file."),false);
 assert.equal(needsDocumentOutput("Phân tích chuyên sâu file Word"),false);
 assert.equal(needsDocumentOutput("Phân tích chuyên sâu rồi xuất Word"),true);
 assert.equal(isDocumentEditFollowup("Chỉ phân tích chuyên sâu, không sửa file và không tạo file",true),false);
+assert(canDraftFromOriginalFiles("Phân tích chuyên sâu cả ba mục trong file",[{name:"report.docx",size:20000}],false,null));
+assert(!canDraftFromOriginalFiles("Phân tích số liệu, tính tổng và đối chiếu",[{name:"report.docx",size:20000}],false,null));
+assert(!canDraftFromOriginalFiles("Phân tích chuyên sâu",[{name:"report.pdf",size:20000}],false,null));
+assert(!canDraftFromOriginalFiles("Phân tích chuyên sâu",[{name:"big.docx",size:3*1024*1024}],false,null));
+assert(documentAnalysisRequest("Phân tích chuyên sâu và gợi ý bổ sung"));
+assert(!documentAnalysisRequest("Soạn hướng dẫn đánh giá chất lượng từ văn bản"));
+assert(!documentAnalysisRequest("Write an assessment report"));
+assert.deepEqual(outputExtensions("Hoàn thiện file Word đang có theo PDF sửa đổi đính kèm. Cập nhật hạn phản hồi thành 23/11/2026 và tiêu chí đạt 82 điểm theo PDF. Chỉ xuất một Word đầy đủ."),[".docx"]);
+assert.deepEqual(outputExtensions("Hoàn thiện Word theo PDF đính kèm, chỉ xuất Word"),[".docx"]);
+assert.deepEqual(outputExtensions("Xuất Word theo PDF đính kèm"),[".docx"]);
+assert.deepEqual(outputExtensions("Sửa Excel, only export PDF"),[".pdf"]);
+assert.match(sourceFormatText("Xuất Word theo PDF đính kèm"),/pdf/);
 
 const bytes=buildWord({filename:"form.docx",title:"BẢN KIỂM ĐIỂM",summary:"",blocks:[
  {type:"paragraph",text:"Họ và tên: … Ngày sinh: …",rows:[]},
@@ -26,6 +41,9 @@ const bytes=buildWord({filename:"form.docx",title:"BẢN KIỂM ĐIỂM",summary
  {type:"paragraph",text:"Người tự kiểm điểm: …",rows:[]},
 ]});
 const source=readEditableWord(bytes),paragraphs=indexedWordParagraphs(source);
+const analysisText=fullWordAnalysisText(bytes)!;
+for(const text of ["ORIGINAL-881","125","0012","80","[table row]","word/footer1.xml"])assert(analysisText.includes(text),text);
+assert.equal(fullWordAnalysisText(zipSync({...unzipSync(bytes),"word/media/image1.png":strToU8("fixture")})),undefined);
 const heading=paragraphs.find(p=>p.text==="I. Ưu điểm")!,field=paragraphs.find(p=>p.text.startsWith("Họ và tên"))!;
 const plan={summary:"",insertions:[{paragraphIndex:heading.index,anchor:heading.text,paragraphs:["Có ý thức học tập, rèn luyện và phối hợp trong công việc.","Chủ động rà soát tiến độ các nhiệm vụ được giao."]}],fills:[{paragraphIndex:field.index,anchor:field.text,text:"Họ và tên: Nguyễn Văn A Ngày sinh: …"}]};
 const output=completeWord(source,plan),result=readEditableWord(output);
@@ -36,6 +54,8 @@ assert(result.text.indexOf("I. Ưu điểm")<result.text.indexOf(plan.insertions
 assert(result.text.indexOf(plan.insertions[0].paragraphs[1])<result.text.indexOf("II. Hạn chế"));
 for(const p of paragraphs)if(p.index!==field.index)assert(result.text.includes(p.text),`Keep original ${p.index}`);
 const originalZip=unzipSync(bytes),outputZip=unzipSync(output);
+const alternateNamespace=strFromU8(originalZip["word/document.xml"]).replace(/\bw:/g,"x:").replace("xmlns:w=","xmlns:x=");
+assert.throws(()=>readEditableWord(zipSync({...originalZip,"word/document.xml":strToU8(alternateNamespace)})),/full editing workflow/);
 for(const part of Object.keys(originalZip))if(part!=="word/document.xml")assert.deepEqual(outputZip[part],originalZip[part],part);
 assert.equal((strFromU8(outputZip["word/document.xml"]).match(/<w:tbl>/g)??[]).length,1);
 assert.throws(()=>completeWord(source,{...plan,fills:[{...plan.fills[0],text:"Nguyễn Văn A"}]}),/label or fact/);

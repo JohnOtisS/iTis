@@ -109,6 +109,18 @@ export function completionOutputRequested(prompt:string){
   const formats=outputExtensions(prompt);return !formats.length||(formats.length===1&&formats[0]===".docx");
 }
 
+export function fullWordAnalysisText(bytes:Uint8Array){
+  try{
+    const source=readEditableWord(bytes);
+    if(Object.keys(source.files).some(name=>/^word\/media\//.test(name)))return undefined;
+    const parts=Object.entries(source.files).filter(([name])=>/^word\/(?:document|header\d+|footer\d+|footnotes|endnotes|comments)\.xml$/.test(name));
+    const text=parts.map(([name,xml])=>`[${name}]\n`+decode(strFromU8(xml)
+      .replace(/<w:tr\b[^>]*>/g,"\n[table row]\n").replace(/<\/w:tc>/g,"\n[table cell]\n")
+      .replace(/<\/w:p>/g,"\n").replace(/<[^>]+>/g,"")).trim()).join("\n\n");
+    return text.length<=40000?text:undefined;
+  }catch{return undefined;}
+}
+
 export function wordCompletionIssues(original:Uint8Array,output:Uint8Array,preserveText=true){
   const read=(bytes:Uint8Array)=>{
     let expanded=0;

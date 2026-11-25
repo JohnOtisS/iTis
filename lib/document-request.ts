@@ -1,5 +1,5 @@
 // Interpret output requirements separately from input filenames and intermediate files.
-const sourceClause = /\b(?:(?:tu|(?:su )?dung|dua vao|can cu vao) (?=file\b|tep\b|tai lieu\b|word\b|docx\b|excel\b|xlsx\b|xlsm\b|tsv\b|pdf\b|pptx\b|powerpoint\b|csv\b)|dua tren\b|theo mau\b|based on\b|from (?=(?:the )?(?:file|document|word|docx|excel|xlsx|xlsm|pdf|pptx|powerpoint|csv|tsv)\b))/;
+const sourceClause = /\b(?:(?:tu|(?:su )?dung|dua vao|can cu vao|theo) (?=file\b|tep\b|tai lieu\b|word\b|docx\b|excel\b|xlsx\b|xlsm\b|tsv\b|pdf\b|pptx\b|powerpoint\b|csv\b)|dua tren\b|theo mau\b|based on\b|from (?=(?:the )?(?:file|document|word|docx|excel|xlsx|xlsm|pdf|pptx|powerpoint|csv|tsv)\b))/;
 const conversionTarget = /\b(?:sang|thanh|qua|ra|to|into|as)\s+(?:(?:file|tep|ban|bang|dinh dang|format|mot|a|an|the)\s+)*(?=pdf\b|word\b|docx\b|excel\b|xlsx\b|xlsm\b|csv\b|tsv\b|powerpoint\b|pptx\b|txt\b|markdown\b)/;
 export const deliveryTarget = /\b(?:ban hanh(?:\s+(?:cho (?:toi|minh|em|anh)))?|ra|gui(?: (?:cho )?(?:toi|minh|em|anh))?|cho (?:toi|minh|em|anh)|send me|give me)\s+(?:(?:ra|sang|thanh|mot|a|an|ban|file|tep|version)\s+)*\.?(?:word|docx|pdf|excel|xlsx|xlsm|csv|tsv|powerpoint|pptx)\b/;
 export function documentRequestText(value:string){
@@ -13,7 +13,7 @@ export function outputExtensions(prompt:string){
   let text=affirmativeDocumentRequest(prompt);
   // A final export after an edit identifies the deliverable, even if the edit
   // mentions a different source format.
-  const exportStep=text.search(/(?:\b(?:roi|sau do|then|va|and)\b|[,;.!?\n])\s*(?:hay\s+)?(?:xuat|export|ban hanh|gui|send|luu|save|tra|return)\b/);
+  const exportStep=text.search(/(?:\b(?:roi|sau do|then|va|and)\b|[,;.!?\n])\s*(?:(?:hay|chi|vui long|please|only)\s+)*(?:xuat|export|ban hanh|gui|send|luu|save|tra|return)\b/);
   if(exportStep>=0&&!/\b(?:xuat|export|ban hanh|gui|send|luu|save|tra|return)\b/.test(text.slice(0,exportStep)))text=text.slice(exportStep);
   const action=text.search(/\b(?:tao|create|generate|xuat|export|ban hanh|chuyen|convert|sua|edit|lam|lap|luu|gui|save|send|make|render|tra|return)\b/);
   if(action>=0)text=text.slice(action);

@@ -45,6 +45,7 @@ export function readEditableWord(bytes:Uint8Array){
   const xml=strFromU8(files["word/document.xml"]??new Uint8Array());
   if(!xml||/<w:(?:ins|del)\b|<!DOCTYPE|<!ENTITY/i.test(xml)||Object.keys(files).some(name=>/vbaProject|embeddings\//.test(name)))throw new Error("This document needs the full editing workflow.");
   const paragraphs=[...xml.matchAll(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g)].map(p=>[...p[0].matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/g)].map(t=>unescapeXml(t[1])).join(""));
+  if(!paragraphs.length)throw new Error("This Word structure needs the full editing workflow.");
   const text=paragraphs.join("\n");
   if(text.length>24000)throw new Error("Word file needs the full editing workflow.");
   return {files,xml,text};
